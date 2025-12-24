@@ -14,8 +14,7 @@ SensorCallback::SensorCallback()
   CurrState(kManualState),
   PrevState(kManualState),
   FollowPattern(kTurnRight),
-  nav_mode(-1),
-  target_cone_id_(0),
+  nav_selected(false),
   gps_goal_set(false),
   cone_detect(false),
   gps_goal_reached(false),
@@ -24,20 +23,26 @@ SensorCallback::SensorCallback()
   rover_state(false),
   last_rover_state(false),
   gps_aligned_(false),
+  delivery_active_(false),
+  delivery_start_time_(rclcpp::Time(0)),
+  nav_mode(-1),
+  target_cone_id_(0),
+  nav_select_done_(false),
+  offset_accum_(0.0),
   current_orientation(0.0),
   cone_x(0.0),
   cone_y(0.0),
   obs_x(0.0),
   obs_y(0.0),
-  search_skew(kRightSkew),
+  search_skew(kNoSkew),
   curr_location{0.0, 0.0},
   goal_location{0.0, 0.0},
   last_gps_time_(rclcpp::Time(0)),
-  delivery_start_time_(rclcpp::Time(0)),
   obs_avoid_linear(),
   obs_avoid_angular(),
   obj_follow_linear(),
   obj_follow_angular(),
+
   cloud(std::make_shared<pcl::PointCloud<pcl::PointXYZ>>())
 {
     // Time
@@ -74,7 +79,7 @@ SensorCallback::SensorCallback()
     cone_sub_ = create_subscription<custom_msgs::msg::MarkerTag>(cone_topic, 10,std::bind(&SensorCallback::coneCallback, this, std::placeholders::_1));
     pcl_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(cloud_topic, 10,std::bind(&SensorCallback::pclCallback, this, std::placeholders::_1));
     auto_sub_ = create_subscription<std_msgs::msg::Bool>(state_topic, 10,std::bind(&SensorCallback::stateCallback, this, std::placeholders::_1));
-    gui_sub_ = create_subscription<custom_msgs::msg::GuiCommand>("/gui/command", 10,std::bind(&SensorCallback::guiCommandCallback, this, std::placeholders::_1));
+    //gui_sub_ = create_subscription<custom_msgs::msg::GuiCommand>("/gui/command", 10,std::bind(&SensorCallback::guiCommandCallback, this, std::placeholders::_1));
 
     // Timers & Services
     stack_timer_ = create_wall_timer(std::chrono::milliseconds(50),std::bind(&SensorCallback::stackRun, this));
@@ -83,7 +88,6 @@ SensorCallback::SensorCallback()
 
     // Search-Related 
     gps_aligned_ = false;
-    search_skew = kRightSkew;
 
     // Random Equations
     obs_avoid_linear =straightLineEquation(kMinObsThreshold, kStopVel,kMaxObsThreshold, kMaxLinearVel);
@@ -101,16 +105,15 @@ void SensorCallback::stackRun()
     std::lock_guard<std::mutex> lock(state_mutex_);
 
     auto now = this->get_clock()->now();
-    // GUI live updates
+
+    // Publish status regardless of motion
     custom_msgs::msg::PlannerStatus s;
     s.state = CurrState;
     s.nav_mode = nav_mode;
-
     s.curr_lat = curr_location.latitude;
     s.curr_lon = curr_location.longitude;
     s.goal_lat = goal_location.latitude;
     s.goal_lon = goal_location.longitude;
-
     s.current_yaw_deg = current_orientation;
     s.cone_detected = cone_detect;
     s.cone_x = cone_x;
@@ -124,10 +127,8 @@ void SensorCallback::stackRun()
     if (gps_goal_set)
     {
         s.distance_to_goal_m = haversine(curr_location, goal_location);
-        s.target_yaw_deg =
-            gpsAngleFix(gpsBearing(curr_location, goal_location));
-        s.heading_error_deg =
-            headingError(s.target_yaw_deg, current_orientation);
+        s.target_yaw_deg = gpsAngleFix(gpsBearing(curr_location, goal_location));
+        s.heading_error_deg = headingError(s.target_yaw_deg, current_orientation);
     }
     else
     {
@@ -139,7 +140,25 @@ void SensorCallback::stackRun()
     s.stamp = now;
     status_pub_->publish(s);
 
-    if (!rover_state || nav_mode == -1)
+    if (!rover_state)
+    {
+        publishVel(geometry_msgs::msg::Twist());
+        return;
+    }
+
+    if (CurrState == kNavigationModeSelect)
+    {
+        navigationModeSelect();
+        return;   
+    }
+
+    if (nav_mode == 0 && !gps_goal_set)
+    {
+        publishVel(geometry_msgs::msg::Twist());
+        return;
+    }
+
+    if (nav_mode == 1 && CurrState != kSearchPattern && (target_cone_id_ <= 0 || search_skew == kNoSkew))
     {
         publishVel(geometry_msgs::msg::Twist());
         return;
@@ -176,6 +195,8 @@ void SensorCallback::stackRun()
     }
 }
 
+
+
 // Planner state decision logic
 void SensorCallback::RoverStateClassifier()
 {
@@ -184,7 +205,9 @@ void SensorCallback::RoverStateClassifier()
         return;
 
     // If any goal is reached switch to delivery state 
-    if (cone_goal_reached || gps_goal_reached)
+    // (MODE-SAFE: prevents wrong or stale goal triggering delivery)
+    if ((nav_mode == 0 && gps_goal_reached) ||
+        (nav_mode == 1 && cone_goal_reached))
     {
         CurrState = kObjectDelivery;
         delivery_start_time_ = rclcpp::Time(0);
@@ -216,10 +239,26 @@ void SensorCallback::RoverStateClassifier()
         return;
     }
 
-    // Cone navigation follow if detected, otherwise search
+    // Cone navigation state handling
     if (nav_mode == 1)
-        CurrState = cone_detect ? kConeFollowing : kSearchPattern;
+    {
+        // Stay in SEARCH until a cone is actually detected
+        if (CurrState == kSearchPattern)
+        {
+            if (cone_detect)
+                CurrState = kConeFollowing;
+            return;
+        }
+
+        // If cone is lost during follow, return to SEARCH
+        if (CurrState == kConeFollowing && !cone_detect)
+        {
+            CurrState = kSearchPattern;
+            return;
+        }
+    }
 }
+
 
 // Callbacks:-
 
@@ -297,51 +336,134 @@ void SensorCallback::stateCallback(const std_msgs::msg::Bool::SharedPtr state)
         CurrState = kManualState;
         PrevState = kManualState;
 
-        cone_goal_reached = false;
+        nav_mode = -1;
+        gps_goal_set = false;
         gps_goal_reached  = false;
+        cone_goal_reached = false;
         gps_aligned_      = false;
 
         cone_detect = false;
         obstacle_detect = false;
 
-        nav_mode = -1;
-        gps_goal_set = false;
-
-        delivery_start_time_ = rclcpp::Time(0);  // reset delivery timer
+        nav_select_done_ = false;
+        delivery_start_time_ = rclcpp::Time(0);
 
         RCLCPP_WARN(this->get_logger(), "[MODE] MANUAL MODE");
         return;
     }
 
+    CurrState = kNavigationModeSelect;
+    PrevState = kManualState;
+
+    nav_select_done_ = false;
+
+    gps_goal_set      = false;
+    gps_goal_reached  = false;
+    cone_goal_reached = false;
+    delivery_start_time_ = rclcpp::Time(0);
+
+    cone_detect = false;
+    obstacle_detect = false;
+
     gps_aligned_ = false;
     last_gps_time_ = this->get_clock()->now();
 
-    RCLCPP_INFO(this->get_logger(), "[MODE] AUTONOMOUS MODE");
+    RCLCPP_INFO(this->get_logger(),
+        "[MODE] AUTONOMOUS MODE → NAVIGATION SELECT");
 }
 
-void SensorCallback::guiCommandCallback(const custom_msgs::msg::GuiCommand::SharedPtr msg)
+
+
+/*void SensorCallback::guiCommandCallback(const custom_msgs::msg::GuiCommand::SharedPtr msg)
 {
     std::lock_guard<std::mutex> lock(state_mutex_);
-
     nav_mode = msg->nav_mode;
-    target_cone_id_ = msg->target_cone_id;
 
-    if (msg->set_search_skew)
-        setSearchSkew(msg->search_skew);
+    if (nav_mode != 1) {
+        search_skew = kNoSkew;
+    }
 
-    if (msg->nav_mode == 0 &&msg->goal_lat != 0.0 &&msg->goal_lon != 0.0)
-    {
+    if (nav_mode == 0 && msg->goal_lat != 0.0 && msg->goal_lon != 0.0) {
         goal_location.latitude  = msg->goal_lat;
         goal_location.longitude = msg->goal_lon;
         gps_goal_set = true;
         gps_goal_reached = false;
         gps_aligned_ = false;
     }
-}
 
+    if (nav_mode == 1) {
+        target_cone_id_ = msg->target_cone_id;
+
+        if (msg->set_search_skew) {
+            setSearchSkew(msg->search_skew);
+        }
+    }
+}
+*/
 // States : 
 
 // Aligns to GPS goal and drives toward it until the target is reached.
+
+// Used for selection of the navigation mode and other variables
+void SensorCallback::navigationModeSelect()
+{
+    if (nav_select_done_)
+        return;
+
+    publishVel(geometry_msgs::msg::Twist());
+
+    std::cout << "\nNAVIGATION MODE SELECT \n";
+    std::cout << "0 → GPS Navigation\n";
+    std::cout << "1 → Cone Navigation\n";
+    std::cout << "Select mode: ";
+    std::cin >> nav_mode;
+
+    if (nav_mode == 0)
+    {
+        std::cout << "Enter goal latitude  : ";
+        std::cin >> goal_location.latitude;
+        std::cout << "Enter goal longitude : ";
+        std::cin >> goal_location.longitude;
+
+        gps_goal_set = true;
+        gps_goal_reached = false;
+        gps_aligned_ = false;
+
+        CurrState = kCoordinateFollowing;
+        std::cout << "[CLI] GPS navigation selected\n";
+    }
+    else if (nav_mode == 1)
+    {
+        std::cout << "Enter target cone ID : ";
+        std::cin >> target_cone_id_;
+
+        std::cout << "Search skew (0 = LEFT, 1 = RIGHT): ";
+        int skew;
+        std::cin >> skew;
+
+        setSearchSkew(skew);
+
+        cone_detect = false;                
+        cone_goal_reached = false;
+        obstacle_detect = false;
+
+        offset_accum_ = 0.0; 
+
+        PrevState = kSearchPattern;
+        CurrState = kSearchPattern;
+
+        std::cout << "[CLI] Cone navigation selected → SEARCH\n";
+    }
+    else
+    {
+        CurrState = kManualState;
+        std::cout << "[CLI] Invalid selection → MANUAL\n";
+    }
+
+    nav_select_done_ = true;
+}
+
+
 
 void SensorCallback::coordinateFollowing()
 {
@@ -465,43 +587,57 @@ void SensorCallback::callSearchPattern()
     static rclcpp::Time end_time;
     static double ref_heading = 0.0;
 
+    if (search_skew == kNoSkew)
+    {
+        RCLCPP_INFO(this->get_logger(), "[SEARCH] Skew not set → idle");
+        publishVel(geometry_msgs::msg::Twist());
+        return;
+    }
+
     if (CurrState != kSearchPattern)
     {
         init = false;
         timing = false;
         FollowPattern = kTurnRight;
+        RCLCPP_INFO(this->get_logger(), "[SEARCH] State exit → reset pattern");
         return;
     }
 
     geometry_msgs::msg::Twist cmd;
     auto now = this->get_clock()->now();
 
-    double yaw;
-    bool cone, obstacle;
-
-    {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        yaw = current_orientation;
-        cone = cone_detect;
-        obstacle = obstacle_detect;
-    }
+    double yaw = current_orientation;
+    bool cone = cone_detect;
+    bool obstacle = obstacle_detect;
 
     if (cone)
     {
         init = false;
         timing = false;
+        offset_accum_ = 0.0;
         CurrState = kConeFollowing;
+        RCLCPP_INFO(this->get_logger(), "[SEARCH] Cone detected → switching to FOLLOW");
         return;
     }
 
     if (obstacle)
+    {
+        RCLCPP_INFO(this->get_logger(), "[SEARCH] Obstacle present → yielding");
         return;
+    }
 
     if (!init)
     {
         init = true;
-        FollowPattern = kTurnRight;
+        timing = false;
+        offset_accum_ = 0.0;
         ref_heading = yaw;
+
+        FollowPattern = (search_skew == kLeftSkew) ? kTurnRight : kTurnLeft;
+
+        RCLCPP_INFO(this->get_logger(),
+            "[SEARCH] Init | ref_heading=%.2f | skew=%d",
+            ref_heading, search_skew);
         return;
     }
 
@@ -512,23 +648,30 @@ void SensorCallback::callSearchPattern()
         if (std::abs(err) > 5.0)
         {
             cmd.angular.z = std::copysign(
-                std::max(0.5, std::abs(err * 0.02)),
-                err);
+                std::max(0.5, std::abs(err * 0.02)), err);
+
+            RCLCPP_INFO(this->get_logger(),
+                "[SEARCH][TURN] target=%.2f yaw=%.2f err=%.2f ang=%.2f",
+                target, yaw, err, cmd.angular.z);
             return false;
         }
 
         ref_heading = yaw;
+        RCLCPP_INFO(this->get_logger(),
+            "[SEARCH][TURN] Complete | new_ref=%.2f", ref_heading);
         return true;
     };
 
     switch (FollowPattern)
     {
         case kTurnRight:
+            RCLCPP_INFO(this->get_logger(), "[SEARCH] Phase: TURN RIGHT");
             if (!turnTo(normalize360(ref_heading - 90.0))) break;
             FollowPattern = kTurnLeft;
             break;
 
         case kTurnLeft:
+            RCLCPP_INFO(this->get_logger(), "[SEARCH] Phase: TURN LEFT");
             if (!turnTo(normalize360(ref_heading + 180.0))) break;
             FollowPattern = kMoveForward;
             break;
@@ -538,6 +681,7 @@ void SensorCallback::callSearchPattern()
             {
                 end_time = now + rclcpp::Duration::from_seconds(3.0);
                 timing = true;
+                RCLCPP_INFO(this->get_logger(), "[SEARCH] Phase: MOVE FORWARD");
             }
 
             if (now < end_time)
@@ -551,8 +695,14 @@ void SensorCallback::callSearchPattern()
 
         case kOffsetTurn:
         {
-            double off = (search_skew == kLeftSkew) ? 15.0 : -15.0;
-            if (!turnTo(normalize360(ref_heading + off))) break;
+            double dir = (search_skew == kLeftSkew) ? -1.0 : 1.0;
+            offset_accum_ += dir * 15.0;
+
+            RCLCPP_INFO(this->get_logger(),
+                "[SEARCH] Phase: OFFSET TURN | accum_offset=%.1f",
+                offset_accum_);
+
+            if (!turnTo(normalize360(ref_heading + offset_accum_))) break;
             FollowPattern = kMoveForward;
             break;
         }
@@ -560,6 +710,8 @@ void SensorCallback::callSearchPattern()
 
     publishVel(cmd);
 }
+
+
 
 // Have to change after imu's are put on by ECS
 // Sends angles to the RM to move to a hard-coded position & switches mode to manual

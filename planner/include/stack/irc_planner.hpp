@@ -7,7 +7,6 @@
 #include <string>
 #include <mutex>
 #include <memory>
-#include <algorithm>
 
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
@@ -35,15 +34,18 @@ const double kRoverLength  = 1.50;
 const double kRoverBreadth = 1.25;
 
 const double kMaxLinearVel  = 0.6;
+const double kMinLinearVel  = 0.0;
 const double kMaxAngularVel = 0.85;
+
 
 const double kMaxObsThreshold = 3.0;
 const double kMinObsThreshold = 0.5;
-const double kMinYObsThreshold = 0.0;
+
 
 const double kMaxXObsDistThreshold = 2.0;
 const double kMinXObsDistThreshold = 1.0;
 const double kMaxYObjDistThreshold = 2.0;
+const double kMinYObsThreshold = 0.0;
 const double kMinYObjDistThreshold = 0.0;
 
 const double kStopVel = 0.0;
@@ -54,6 +56,7 @@ const double kDistanceThreshold = 2.0;
 enum State
 {
     kManualState,
+    kNavigationModeSelect,
     kCoordinateFollowing,
     kSearchPattern,
     kConeFollowing,
@@ -71,8 +74,9 @@ enum SearchPatternType
 
 enum SearchSkew
 {
-    kLeftSkew,
-    kRightSkew
+    kNoSkew    = -1,
+    kLeftSkew  = 0,
+    kRightSkew = 1
 };
 
 struct Coordinates
@@ -104,16 +108,12 @@ private:
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr toggle_client_;
     rclcpp::TimerBase::SharedPtr stack_timer_;
 
-        // State Machine
     State CurrState;
     State PrevState;
     SearchPatternType FollowPattern;
 
-    // Navigation Variables
-    int nav_mode;
-    int target_cone_id_;
-
     // Various Flags
+    bool nav_selected;
     bool gps_goal_set;
     bool cone_detect;
     bool gps_goal_reached;
@@ -122,6 +122,14 @@ private:
     bool rover_state;
     bool last_rover_state;
     bool gps_aligned_;
+    bool delivery_active_;
+    rclcpp::Time delivery_start_time_;
+
+    // Navigation Variables
+    int nav_mode;
+    int target_cone_id_;
+    bool nav_select_done_;
+    double offset_accum_;
 
     // Measurements
     double current_orientation;
@@ -129,24 +137,20 @@ private:
     double cone_y;
     double obs_x;
     double obs_y;
-
-    // Search Pattern
+    
     SearchSkew search_skew;
 
-    // GPS Coordinates
+
     Coordinates curr_location;
     Coordinates goal_location;
 
     rclcpp::Time last_gps_time_;
-    rclcpp::Time delivery_start_time_;
 
-    // Controller Parameters
     std::vector<double> obs_avoid_linear;
     std::vector<double> obs_avoid_angular;
     std::vector<double> obj_follow_linear;
     std::vector<double> obj_follow_angular;
 
-    // PointCloud
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
 
     std::mutex state_mutex_;
@@ -169,6 +173,7 @@ private:
     void objectFollowing();
     void callSearchPattern();
     void objectDelivery();
+    void navigationModeSelect();
 
     // Helper Functions
     void publishVel(const geometry_msgs::msg::Twist& msg);
