@@ -66,10 +66,10 @@ enum State
 
 enum SearchPatternType
 {
+    kFaceForward,
     kMoveForward,
     kTurnRight,
     kTurnLeft,
-    kOffsetTurn,
 };
 
 enum SearchSkew

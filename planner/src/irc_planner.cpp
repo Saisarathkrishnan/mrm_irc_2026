@@ -579,138 +579,144 @@ void SensorCallback::objectFollowing()
 }
 
 // Controls how the rover searches when no cone is visible.
-
 void SensorCallback::callSearchPattern()
 {
-    static bool init = false;
-    static bool timing = false;
+    static bool init=false;
+    static bool timing=false;
     static rclcpp::Time end_time;
-    static double ref_heading = 0.0;
+    static double base_heading=0.0;
+    static double offset_deg=0.0;
 
-    if (search_skew == kNoSkew)
-    {
-        RCLCPP_INFO(this->get_logger(), "[SEARCH] Skew not set → idle");
+    if(search_skew==kNoSkew){
+        RCLCPP_WARN_THROTTLE(this->get_logger(),*this->get_clock(),2000,
+            "[SEARCH][BLOCKED] search_skew not set");
         publishVel(geometry_msgs::msg::Twist());
         return;
     }
 
-    if (CurrState != kSearchPattern)
-    {
-        init = false;
-        timing = false;
-        FollowPattern = kTurnRight;
-        RCLCPP_INFO(this->get_logger(), "[SEARCH] State exit → reset pattern");
+    if(CurrState!=kSearchPattern){
+        RCLCPP_INFO(this->get_logger(),
+            "[SEARCH][EXIT] state=%d reset FSM",CurrState);
+        init=false;timing=false;offset_deg=0.0;FollowPattern=kTurnRight;
         return;
     }
 
     geometry_msgs::msg::Twist cmd;
-    auto now = this->get_clock()->now();
+    auto now=this->get_clock()->now();
+    double yaw=current_orientation;
 
-    double yaw = current_orientation;
-    bool cone = cone_detect;
-    bool obstacle = obstacle_detect;
-
-    if (cone)
-    {
-        init = false;
-        timing = false;
-        offset_accum_ = 0.0;
-        CurrState = kConeFollowing;
-        RCLCPP_INFO(this->get_logger(), "[SEARCH] Cone detected → switching to FOLLOW");
+    if(cone_detect){
+        RCLCPP_INFO(this->get_logger(),
+            "[SEARCH][FOUND] cone detected → FOLLOW | yaw=%.2f",yaw);
+        init=false;timing=false;offset_deg=0.0;
+        CurrState=kConeFollowing;
         return;
     }
 
-    if (obstacle)
-    {
-        RCLCPP_INFO(this->get_logger(), "[SEARCH] Obstacle present → yielding");
+    if(obstacle_detect){
+        RCLCPP_WARN_THROTTLE(this->get_logger(),*this->get_clock(),1000,
+            "[SEARCH][PAUSE] obstacle detected");
         return;
     }
 
-    if (!init)
-    {
-        init = true;
-        timing = false;
-        offset_accum_ = 0.0;
-        ref_heading = yaw;
-
-        FollowPattern = (search_skew == kLeftSkew) ? kTurnRight : kTurnLeft;
+    if(!init){
+        init=true;timing=false;
+        base_heading=yaw;
+        offset_deg=0.0;
+        FollowPattern=(search_skew==kLeftSkew)?kTurnRight:kTurnLeft;
 
         RCLCPP_INFO(this->get_logger(),
-            "[SEARCH] Init | ref_heading=%.2f | skew=%d",
-            ref_heading, search_skew);
+            "[SEARCH][INIT] base=%.2f skew=%s first=%s",
+            base_heading,
+            (search_skew==kLeftSkew?"LEFT":"RIGHT"),
+            (FollowPattern==kTurnRight?"TURN_RIGHT":"TURN_LEFT"));
         return;
     }
 
-    auto turnTo = [&](double target)
-    {
-        double err = headingError(target, yaw);
+    auto turnTo=[&](double target){
+        double err=headingError(target,yaw);
+        if(std::abs(err)>5.0){
+            cmd.angular.z=std::copysign(
+                std::max(0.5,std::abs(err*0.02)),err);
 
-        if (std::abs(err) > 5.0)
-        {
-            cmd.angular.z = std::copysign(
-                std::max(0.5, std::abs(err * 0.02)), err);
-
-            RCLCPP_INFO(this->get_logger(),
+            RCLCPP_INFO_THROTTLE(this->get_logger(),*this->get_clock(),500,
                 "[SEARCH][TURN] target=%.2f yaw=%.2f err=%.2f ang=%.2f",
-                target, yaw, err, cmd.angular.z);
+                target,yaw,err,cmd.angular.z);
             return false;
         }
 
-        ref_heading = yaw;
         RCLCPP_INFO(this->get_logger(),
-            "[SEARCH][TURN] Complete | new_ref=%.2f", ref_heading);
+            "[SEARCH][TURN][DONE] target=%.2f yaw=%.2f",
+            target,yaw);
         return true;
     };
 
-    switch (FollowPattern)
+    switch(FollowPattern)
     {
         case kTurnRight:
-            RCLCPP_INFO(this->get_logger(), "[SEARCH] Phase: TURN RIGHT");
-            if (!turnTo(normalize360(ref_heading - 90.0))) break;
-            FollowPattern = kTurnLeft;
+        {
+            double tgt=normalize360(base_heading-90.0);
+            if(!turnTo(tgt)) break;
+            FollowPattern=kTurnLeft;
+            RCLCPP_INFO(this->get_logger(),
+                "[SEARCH][FSM] TURN_RIGHT → TURN_LEFT");
             break;
+        }
 
         case kTurnLeft:
-            RCLCPP_INFO(this->get_logger(), "[SEARCH] Phase: TURN LEFT");
-            if (!turnTo(normalize360(ref_heading + 180.0))) break;
-            FollowPattern = kMoveForward;
+        {
+            double tgt=normalize360(base_heading+90.0);
+            if(!turnTo(tgt)) break;
+            FollowPattern=kFaceForward;
+            RCLCPP_INFO(this->get_logger(),
+                "[SEARCH][FSM] TURN_LEFT → FACE_FORWARD");
             break;
+        }
+
+        case kFaceForward:
+        {
+            double tgt=normalize360(base_heading+offset_deg);
+            if(!turnTo(tgt)) break;
+            FollowPattern=kMoveForward;
+            RCLCPP_INFO(this->get_logger(),
+                "[SEARCH][FSM] FACE_FORWARD → MOVE_FORWARD | offset=%.2f",
+                offset_deg);
+            break;
+        }
 
         case kMoveForward:
-            if (!timing)
-            {
-                end_time = now + rclcpp::Duration::from_seconds(3.0);
-                timing = true;
-                RCLCPP_INFO(this->get_logger(), "[SEARCH] Phase: MOVE FORWARD");
-            }
-
-            if (now < end_time)
-                cmd.linear.x = kMaxLinearVel;
-            else
-            {
-                timing = false;
-                FollowPattern = kOffsetTurn;
-            }
-            break;
-
-        case kOffsetTurn:
         {
-            double dir = (search_skew == kLeftSkew) ? -1.0 : 1.0;
-            offset_accum_ += dir * 15.0;
+            if(!timing){
+                end_time=now+rclcpp::Duration::from_seconds(3.0);
+                timing=true;
+                RCLCPP_INFO(this->get_logger(),
+                    "[SEARCH][MOVE] start forward window (3.0s)");
+            }
 
-            RCLCPP_INFO(this->get_logger(),
-                "[SEARCH] Phase: OFFSET TURN | accum_offset=%.1f",
-                offset_accum_);
+            if(now<end_time){
+                cmd.linear.x=kMaxLinearVel;
+                RCLCPP_INFO_THROTTLE(this->get_logger(),*this->get_clock(),500,
+                    "[SEARCH][MOVE] forward | v=%.2f",cmd.linear.x);
+            }
+            else{
+                timing=false;
+                double prev=offset_deg;
+                offset_deg+=(offset_deg==0.0?15.0:10.0);
+                offset_deg=std::clamp(offset_deg,-90.0,90.0);
 
-            if (!turnTo(normalize360(ref_heading + offset_accum_))) break;
-            FollowPattern = kMoveForward;
+                FollowPattern=(search_skew==kLeftSkew)?kTurnRight:kTurnLeft;
+
+                RCLCPP_WARN(this->get_logger(),
+                    "[SEARCH][EXPAND] offset %.2f → %.2f | next=%s",
+                    prev,offset_deg,
+                    (FollowPattern==kTurnRight?"TURN_RIGHT":"TURN_LEFT"));
+            }
             break;
         }
     }
 
     publishVel(cmd);
 }
-
 
 
 // Have to change after imu's are put on by ECS
