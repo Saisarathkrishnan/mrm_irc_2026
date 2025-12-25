@@ -70,6 +70,7 @@ enum SearchPatternType
     kMoveForward,
     kTurnRight,
     kTurnLeft,
+    kOffsetTurn,
 };
 
 enum SearchSkew
@@ -124,12 +125,12 @@ private:
     bool gps_aligned_;
     bool delivery_active_;
     rclcpp::Time delivery_start_time_;
+    rclcpp::Time last_cone_time_;
 
     // Navigation Variables
     int nav_mode;
     int target_cone_id_;
     bool nav_select_done_;
-    double offset_accum_;
 
     // Measurements
     double current_orientation;
@@ -137,9 +138,14 @@ private:
     double cone_y;
     double obs_x;
     double obs_y;
-    
-    SearchSkew search_skew;
 
+    // SEARCH FSM internals
+    bool search_init_;
+    bool search_timing_;
+    rclcpp::Time search_end_time_;
+    double search_base_heading_;
+    double search_offset_deg_;
+    SearchSkew search_skew;
 
     Coordinates curr_location;
     Coordinates goal_location;
@@ -182,6 +188,8 @@ private:
     void obstacleClassifier();
     void setGoalStatus();
     void setSearchSkew(int skew);
+    void resetSearchPattern();
+    bool isConeFresh();
 
     // Math Functions 
     std::vector<double> straightLineEquation(double x1, double y1,double x2, double y2);
