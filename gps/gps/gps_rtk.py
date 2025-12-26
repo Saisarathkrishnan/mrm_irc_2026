@@ -15,7 +15,7 @@ class UbxParserNode(Node):
     def __init__(self):
         super().__init__('gps')
 
-        self.declare_parameter('serial_port', '/dev/ttyACM0')
+        self.declare_parameter('serial_port', '/dev/ttyACM1')
         self.declare_parameter('baud_rate', 38400)
 
         port = self.get_parameter('serial_port').value
@@ -51,8 +51,8 @@ class UbxParserNode(Node):
             try:
                 _, msg = ubr.read()
                 if msg and msg.identity == "NAV-PVT":
-                    self.lat = msg.lat / 1e7
-                    self.lon = msg.lon / 1e7
+                    self.lat = msg.lat 
+                    self.lon = msg.lon
                     self.alt = msg.hMSL / 1000.0
                     self.fix_type = msg.fixType
                     self.sats = msg.numSV

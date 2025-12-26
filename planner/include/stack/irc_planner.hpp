@@ -33,9 +33,9 @@ namespace planner
 const double kRoverLength  = 1.50;
 const double kRoverBreadth = 1.25;
 
-const double kMaxLinearVel  = 0.6;
+const double kMaxLinearVel  = 1.0;
 const double kMinLinearVel  = 0.0;
-const double kMaxAngularVel = 0.85;
+const double kMaxAngularVel = 1.3;
 
 
 const double kMaxObsThreshold = 3.0;

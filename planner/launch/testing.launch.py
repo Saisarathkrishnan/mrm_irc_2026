@@ -35,12 +35,12 @@ def generate_launch_description():
         ]
     )
 
-    # local_obstacle_filter_silent = ExecuteProcess(
-    #     cmd=[
-    #         'bash', '-c',
-    #         'ros2 run planner local_obstacle_filter_node > /dev/null 2>&1'
-    #     ]
-    # )
+    local_obstacle_filter_silent = ExecuteProcess(
+        cmd=[
+            'bash', '-c',
+            'ros2 run planner local_obstacle_filter_node > /dev/null 2>&1'
+        ]
+    )
 
     gps_rtk_silent = ExecuteProcess(
         cmd=[
@@ -54,6 +54,6 @@ def generate_launch_description():
         inference_engine,
         relay_node,
         imu_conversion_silent,
-        # local_obstacle_filter_silent,
+        local_obstacle_filter_silent,
         gps_rtk_silent
     ])

@@ -336,17 +336,17 @@ void SensorCallback::coneCallback(const custom_msgs::msg::MarkerTag::SharedPtr c
         return;
 
     std::lock_guard<std::mutex> lock(state_mutex_);
-    cone_detect = false;
 
-    if (cone->is_found && cone->id == target_cone_id_)   
+    // Only update on valid target cone
+    if (cone->is_found && cone->id == target_cone_id_)
     {
         cone_detect = true;
         cone_x = cone->x;
         cone_y = cone->y;
-
         last_cone_time_ = this->get_clock()->now();
     }
 }
+
 
 
 void SensorCallback::stateCallback(const std_msgs::msg::Bool::SharedPtr state)
@@ -507,7 +507,7 @@ void SensorCallback::coordinateFollowing()
     }
 
     double dist = haversine(curr_location, goal_location);
-    double target_deg = gpsAngleFix(gpsBearing(curr_location, goal_location));
+    double target_deg = gpsBearing(curr_location, goal_location);
     double yaw_deg    = current_orientation;
     double err_deg    = headingError(target_deg, yaw_deg);
     double err_rad    = err_deg * M_PI / 180.0;
@@ -517,40 +517,62 @@ void SensorCallback::coordinateFollowing()
         gps_goal_reached = true;
         gps_aligned_ = false;
 
-        RCLCPP_INFO(this->get_logger(),"[GPS] Goal reached | remaining_dist=%.2f m",dist);
+        RCLCPP_INFO(this->get_logger(),
+            "[GPS] Goal reached | remaining_dist=%.2f m", dist);
         hardStop();
         return;
     }
 
     geometry_msgs::msg::Twist cmd;
 
+    /* ALIGN PHASE */
     if (!gps_aligned_)
     {
-        if (std::abs(err_deg) > 6.0)
+        if (std::abs(err_deg) > 8.0)
         {
-            cmd.linear.x = 0.0;
-            cmd.angular.z = std::copysign(std::max(0.4, std::abs(err_rad)),err_rad);
-            cmd.angular.z = std::clamp(cmd.angular.z,-kMaxAngularVel,kMaxAngularVel);
+            cmd.linear.x  = 0.0;
+            cmd.angular.z = std::clamp(
+                std::copysign(std::abs(err_rad), err_rad),
+                -kMaxAngularVel, kMaxAngularVel);
 
-            RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500,"[GPS][ALIGN] dist=%.2f | err=%.2f deg | ang=%.2f",dist, err_deg, cmd.angular.z);
+            RCLCPP_INFO_THROTTLE(
+                this->get_logger(), *this->get_clock(), 500,
+                "[GPS][ALIGN] dist=%.2f | err=%.2f deg | ang=%.2f",
+                dist, err_deg, cmd.angular.z);
+
             publishVel(cmd);
             return;
         }
+
         gps_aligned_ = true;
-        RCLCPP_INFO(this->get_logger(),"[GPS] Alignment complete | remaining_dist=%.2f m",dist);
+        RCLCPP_INFO(this->get_logger(),
+            "[GPS] Alignment complete | remaining_dist=%.2f m", dist);
     }
 
-    cmd.linear.x = std::clamp(dist * 0.15,0.4,kMaxLinearVel);
+    /* RE-ENTER ALIGN IF DRIFTED */
+    if (gps_aligned_ && std::abs(err_deg) > 12.0)
+    {
+        gps_aligned_ = false;
+        return;
+    }
+
+    /* TRACK PHASE */
+    cmd.linear.x = std::clamp(dist * 0.15, 0.4, kMaxLinearVel);
+
     double ang = err_rad * 1.2;
+    if (std::abs(err_deg) < 4.0)
+        ang = 0.0;
 
-    if (std::abs(ang) < 0.4)
-        ang = std::copysign(0.4, ang);
+    cmd.angular.z = std::clamp(ang, -kMaxAngularVel, kMaxAngularVel);
 
-    cmd.angular.z = std::clamp(ang,-kMaxAngularVel,kMaxAngularVel);
+    RCLCPP_INFO_THROTTLE(
+        this->get_logger(), *this->get_clock(), 1000,
+        "[GPS][TRACK] dist=%.2f | err=%.2f deg | lin=%.2f | ang=%.2f",
+        dist, err_deg, cmd.linear.x, cmd.angular.z);
 
-    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,"[GPS][TRACK] dist=%.2f | err=%.2f deg | lin=%.2f | ang=%.2f",dist, err_deg, cmd.linear.x, cmd.angular.z);
     publishVel(cmd);
 }
+
 
 // Function for obstacle avoidance 
 
@@ -642,18 +664,21 @@ void SensorCallback::callSearchPattern()
     auto now = this->get_clock()->now();
     double yaw = current_orientation;
 
-    if (cone_detect)
+    if (cone_detect && isConeFresh())
     {
         RCLCPP_INFO(this->get_logger(),
-            "[SEARCH][FOUND] cone detected → FOLLOW | yaw=%.2f", yaw);
+            "[SEARCH][FOUND] cone detected → CONE_FOLLOW | yaw=%.2f", yaw);
+        CurrState = kConeFollowing;
         resetSearchPattern();
         return;
     }
+
 
     if (obstacle_detect)
     {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
             "[SEARCH][PAUSE] obstacle detected");
+        publishVel(geometry_msgs::msg::Twist());
         return;
     }
 
@@ -665,50 +690,53 @@ void SensorCallback::callSearchPattern()
         search_base_heading_ = yaw;
         search_offset_deg_ = 0.0;
 
+        // FIX: skew now maps to correct physical turn
         FollowPattern =
-            (search_skew == kLeftSkew) ? kTurnRight : kTurnLeft;
+            (search_skew == kLeftSkew) ? kTurnLeft : kTurnRight;
 
         RCLCPP_INFO(this->get_logger(),
             "[SEARCH][INIT] base=%.2f skew=%s first=%s",
             search_base_heading_,
             (search_skew == kLeftSkew ? "LEFT" : "RIGHT"),
-            (FollowPattern == kTurnRight ? "TURN_RIGHT" : "TURN_LEFT"));
+            (FollowPattern == kTurnLeft ? "TURN_LEFT" : "TURN_RIGHT"));
         return;
     }
 
     auto turnTo = [&](double target)
     {
         double err = headingError(target, yaw);
+
         if (std::abs(err) > 5.0)
         {
-            cmd.angular.z = std::copysign(
-                std::max(0.5, std::abs(err * 0.02)), err);
+            cmd.angular.z = std::copysign(kMaxAngularVel, err);
 
             RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500,
                 "[SEARCH][TURN] target=%.2f yaw=%.2f err=%.2f ang=%.2f",
                 target, yaw, err, cmd.angular.z);
+
             return false;
         }
 
         RCLCPP_INFO(this->get_logger(),
             "[SEARCH][TURN][DONE] target=%.2f yaw=%.2f",
             target, yaw);
+
         return true;
     };
 
     switch (FollowPattern)
     {
-        case kTurnRight:
-        {
-            double tgt = normalize360(search_base_heading_ - 90.0);
-            if (!turnTo(tgt)) break;
-            FollowPattern = kTurnLeft;
-            break;
-        }
-
         case kTurnLeft:
         {
             double tgt = normalize360(search_base_heading_ + 90.0);
+            if (!turnTo(tgt)) break;
+            FollowPattern = kTurnRight;
+            break;
+        }
+
+        case kTurnRight:
+        {
+            double tgt = normalize360(search_base_heading_ - 90.0);
             if (!turnTo(tgt)) break;
             FollowPattern = kFaceForward;
             break;
@@ -716,8 +744,7 @@ void SensorCallback::callSearchPattern()
 
         case kFaceForward:
         {
-            double tgt = normalize360(
-                search_base_heading_ + search_offset_deg_);
+            double tgt = normalize360(search_base_heading_ + search_offset_deg_);
             if (!turnTo(tgt)) break;
             FollowPattern = kMoveForward;
             break;
@@ -749,8 +776,9 @@ void SensorCallback::callSearchPattern()
                 search_offset_deg_ =
                     std::clamp(search_offset_deg_, -90.0, 90.0);
 
+                // FIX: expansion preserves skew direction
                 FollowPattern =
-                    (search_skew == kLeftSkew) ? kTurnRight : kTurnLeft;
+                    (search_skew == kLeftSkew) ? kTurnLeft : kTurnRight;
 
                 RCLCPP_WARN(this->get_logger(),
                     "[SEARCH][EXPAND] offset %.2f → %.2f",
@@ -758,14 +786,15 @@ void SensorCallback::callSearchPattern()
             }
 
             publishVel(cmd);
-            break;
+            return;
         }
 
         default:
             break;
     }
-}
 
+    publishVel(cmd);
+}
 
 // Have to change after imu's are put on by ECS
 // Sends angles to the RM to move to a hard-coded position & switches mode to manual
@@ -947,17 +976,22 @@ void SensorCallback::setSearchSkew(int skew)
 
 void SensorCallback::resetSearchPattern()
 {
-    FollowPattern = kTurnRight;
+    FollowPattern =
+        (search_skew == kLeftSkew) ? kTurnLeft : kTurnRight;
 
     search_init_ = false;
     search_timing_ = false;
     search_offset_deg_ = 0.0;
 }
 
-bool SensorCallback::isConeFresh() 
+bool SensorCallback::isConeFresh()
 {
-    return (this->get_clock()->now() - last_cone_time_).seconds() < 0.5;
+    bool fresh = (this->get_clock()->now() - last_cone_time_).seconds() < 0.5;
+    if (!fresh)
+        cone_detect = false;
+    return fresh;
 }
+
 
 
 // Math Functions :
