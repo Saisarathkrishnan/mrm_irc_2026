@@ -33,14 +33,13 @@ namespace planner
 const double kRoverLength  = 1.50;
 const double kRoverBreadth = 1.25;
 
-const double kMaxLinearVel  = 1.0;
+const double kMaxLinearVel  = 0.8;
 const double kMinLinearVel  = 0.0;
-const double kMaxAngularVel = 1.3;
-
+const double kMinAngularVel = 1.0;
+const double kMaxAngularVel = 1.5;
 
 const double kMaxObsThreshold = 3.0;
 const double kMinObsThreshold = 0.5;
-
 
 const double kMaxXObsDistThreshold = 2.0;
 const double kMinXObsDistThreshold = 1.0;
@@ -149,7 +148,8 @@ private:
 
     Coordinates curr_location;
     Coordinates goal_location;
-
+    double locked_bearing_deg_;
+    bool   bearing_locked_;
     rclcpp::Time last_gps_time_;
 
     std::vector<double> obs_avoid_linear;

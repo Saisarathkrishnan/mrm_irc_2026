@@ -15,7 +15,7 @@ class UbxParserNode(Node):
     def __init__(self):
         super().__init__('gps')
 
-        self.declare_parameter('serial_port', '/dev/ttyACM1')
+        self.declare_parameter('serial_port', '/dev/ttyACM0')
         self.declare_parameter('baud_rate', 38400)
 
         port = self.get_parameter('serial_port').value
