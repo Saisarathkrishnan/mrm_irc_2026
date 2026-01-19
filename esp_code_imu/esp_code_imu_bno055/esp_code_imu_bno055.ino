@@ -107,7 +107,7 @@ void loop() {
         yaw08x *= 180.0 / M_PI;
       }
       
-    Serial.print("yl1_");
+    Serial.print("_yl1_");
     Serial.print(eulerbno2.x(), 2);
     Serial.print("_");
     Serial.print(eulerbno2.y(), 2);
@@ -120,12 +120,6 @@ void loop() {
     Serial.print("_");
     Serial.print(roll08x);
     Serial.print("_rv_");
-    Serial.print(yaw08x);
-    Serial.print("_");
-    Serial.print(pitch08x);
-    Serial.print("_");
-    Serial.print(roll08x);
-    Serial.print("4 ");
     Serial.print(euler.x(),2);
     Serial.print("_");
     Serial.print(euler.y(),2);

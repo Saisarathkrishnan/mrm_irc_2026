@@ -33,13 +33,17 @@ class BNO055Node(Node):
         self.imu_data=dict({"r":400.0,"p":400.0,"y":400.0})
         self.toAnglel1=90
         self.toAnglel2=180
+        self.rvYaw=400
+        self.rvRoll=400
+        self.rvPitch=400
+
 
         self.link1Pwm=0
         self.link2Pwm=0
 #        self.l2=dict()
         self.line="123"
         
-        self.imu_pub_ = self.create_publisher(ImuData, '/imu_data', 10)
+        self.imu_pub_ = self.create_publisher(ImuData, '/external_imu', 10)
 
         self.delivery_sub_ = self.create_subscription(Bool, '/deliver_now',self.delivery_callback, 10)
         
@@ -120,6 +124,14 @@ class BNO055Node(Node):
             self.l2["p"]=float(z[7])
             self.l2["y"]=float(z[5])
 
+            imuD=ImuData()
+            self.rvYaw=float(z[9])
+            self.rvRoll=float(z[10])
+            self.rvPitch=float(z[11])
+            imuD.orientation.z=self.rvYaw
+            imuD.orientation.x=self.rvRoll
+            imuD.orientation.y=self.rvPitch
+            self.imu_pub_.publish(imuD)
             self.l1["p"]=self.l1["p"] % 360
             self.l2["p"]=self.l2["p"] % 360
 
