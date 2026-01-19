@@ -1,0 +1,10 @@
+[01m[K/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/planner/src/irc_planner.cpp:[m[K In member function ‘[01m[Kvoid planner::SensorCallback::pclCallback(sensor_msgs::msg::PointCloud2_<std::allocator<void> >::SharedPtr)[m[K’:
+[01m[K/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/planner/src/irc_planner.cpp:359:20:[m[K [01;35m[Kwarning: [m[Kunused variable ‘[01m[Kyaw_deg[m[K’ [[01;35m[K]8;;https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html#index-Wunused-variable-Wunused-variable]8;;[m[K]
+  359 |             double [01;35m[Kyaw_deg[m[K = yaw_rad * 180.0 / M_PI;
+      |                    [01;35m[K^~~~~~~[m[K
+[01m[K/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/planner/src/irc_planner.cpp:363:20:[m[K [01;35m[Kwarning: [m[Kunused variable ‘[01m[Kpitch_deg[m[K’ [[01;35m[K]8;;https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html#index-Wunused-variable-Wunused-variable]8;;[m[K]
+  363 |             double [01;35m[Kpitch_deg[m[K = pitch_rad * 180.0 / M_PI;
+      |                    [01;35m[K^~~~~~~~~[m[K
+[01m[K/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/planner/src/irc_planner.cpp:340:13:[m[K [01;35m[Kwarning: [m[Kunused variable ‘[01m[Kcluster_id[m[K’ [[01;35m[K]8;;https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html#index-Wunused-variable-Wunused-variable]8;;[m[K]
+  340 |         int [01;35m[Kcluster_id[m[K = 0;
+      |             [01;35m[K^~~~~~~~~~[m[K

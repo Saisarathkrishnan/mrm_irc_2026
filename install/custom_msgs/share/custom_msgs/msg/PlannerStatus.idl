@@ -1,0 +1,49 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from custom_msgs/msg/PlannerStatus.msg
+// generated code does not contain a copyright notice
+
+#include "builtin_interfaces/msg/Time.idl"
+
+module custom_msgs {
+  module msg {
+    struct PlannerStatus {
+      int8 state;
+
+      int8 nav_mode;
+
+      double curr_lat;
+
+      double curr_lon;
+
+      double goal_lat;
+
+      double goal_lon;
+
+      double distance_to_goal_m;
+
+      double current_yaw_deg;
+
+      double target_yaw_deg;
+
+      double heading_error_deg;
+
+      boolean cone_detected;
+
+      double cone_x;
+
+      double cone_y;
+
+      int32 target_cone_id;
+
+      boolean obstacle_detected;
+
+      boolean gps_goal_reached;
+
+      boolean cone_goal_reached;
+
+      boolean autonomous_enabled;
+
+      builtin_interfaces::msg::Time stamp;
+    };
+  };
+};

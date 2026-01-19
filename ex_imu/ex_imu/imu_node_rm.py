@@ -148,7 +148,7 @@ class BNO055Node(Node):
                     msgggg.data=True
                     self.delivered_pub_.publish(msgggg)
                     return
-                
+                6
                 if(abs(link1Diff) > 2):
                     if(link1Diff>0):
                         #print("link1 diff 1" ,link1Diff)

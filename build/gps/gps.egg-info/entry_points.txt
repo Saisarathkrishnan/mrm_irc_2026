@@ -1,0 +1,3 @@
+[console_scripts]
+gps_rtcm = gps.gps_rtcm:main
+gps_rtk = gps.gps_rtk:main

@@ -1,0 +1,44 @@
+[0.765s] Invoking command in '/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/yolo': AMENT_PREFIX_PATH=/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/custom_msgs:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/custom_msgs:${CMAKE_PREFIX_PATH} LD_LIBRARY_PATH=/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/custom_msgs/lib:${LD_LIBRARY_PATH} PYTHONPATH=/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/lib/python3.10/site-packages:/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/custom_msgs/local/lib/python3.10/dist-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/yolo build --build-base /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/build install --record /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/install.log --single-version-externally-managed install_data
+[0.940s] running egg_info
+[0.940s] creating ../build/yolo/yolo.egg-info
+[0.950s] writing ../build/yolo/yolo.egg-info/PKG-INFO
+[0.951s] writing dependency_links to ../build/yolo/yolo.egg-info/dependency_links.txt
+[0.951s] writing entry points to ../build/yolo/yolo.egg-info/entry_points.txt
+[0.951s] writing requirements to ../build/yolo/yolo.egg-info/requires.txt
+[0.951s] writing top-level names to ../build/yolo/yolo.egg-info/top_level.txt
+[1.017s] writing manifest file '../build/yolo/yolo.egg-info/SOURCES.txt'
+[1.041s] reading manifest file '../build/yolo/yolo.egg-info/SOURCES.txt'
+[1.041s] writing manifest file '../build/yolo/yolo.egg-info/SOURCES.txt'
+[1.041s] running build
+[1.041s] running build_py
+[1.041s] creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/build
+[1.041s] creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/build/lib
+[1.041s] creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/build/lib/yolo
+[1.041s] copying yolo/inference_engine.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/build/lib/yolo
+[1.041s] copying yolo/__init__.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/build/lib/yolo
+[1.041s] copying yolo/inference_node.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/build/lib/yolo
+[1.042s] running install
+[1.045s] running install_lib
+[1.057s] creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/lib/python3.10/site-packages/yolo
+[1.057s] copying /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/build/lib/yolo/inference_engine.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/lib/python3.10/site-packages/yolo
+[1.057s] copying /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/build/lib/yolo/__init__.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/lib/python3.10/site-packages/yolo
+[1.057s] copying /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/build/lib/yolo/inference_node.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/lib/python3.10/site-packages/yolo
+[1.058s] byte-compiling /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/lib/python3.10/site-packages/yolo/inference_engine.py to inference_engine.cpython-310.pyc
+[1.059s] byte-compiling /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/lib/python3.10/site-packages/yolo/__init__.py to __init__.cpython-310.pyc
+[1.059s] byte-compiling /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/lib/python3.10/site-packages/yolo/inference_node.py to inference_node.cpython-310.pyc
+[1.060s] running install_data
+[1.060s] creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/share/ament_index
+[1.060s] creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/share/ament_index/resource_index
+[1.060s] creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/share/ament_index/resource_index/packages
+[1.061s] copying resource/yolo -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/share/ament_index/resource_index/packages
+[1.061s] copying package.xml -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/share/yolo
+[1.061s] creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/share/yolo/models
+[1.061s] copying yolo/cone_v1.engine -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/share/yolo/models
+[1.073s] running install_egg_info
+[1.085s] Copying ../build/yolo/yolo.egg-info to /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/lib/python3.10/site-packages/yolo-0.1.0-py3.10.egg-info
+[1.085s] running install_scripts
+[1.118s] Installing inference script to /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/lib/yolo
+[1.118s] Installing inference_engine script to /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/lib/yolo
+[1.118s] Installing inference_engine_tiled script to /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/lib/yolo
+[1.118s] writing list of installed files to '/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/install.log'
+[1.139s] Invoked command in '/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/yolo' returned '0': AMENT_PREFIX_PATH=/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/custom_msgs:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/custom_msgs:${CMAKE_PREFIX_PATH} LD_LIBRARY_PATH=/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/custom_msgs/lib:${LD_LIBRARY_PATH} PYTHONPATH=/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/yolo/lib/python3.10/site-packages:/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/custom_msgs/local/lib/python3.10/dist-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../build/yolo build --build-base /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/build install --record /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/yolo/install.log --single-version-externally-managed install_data

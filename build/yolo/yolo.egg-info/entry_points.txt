@@ -1,0 +1,4 @@
+[console_scripts]
+inference = yolo.inference_node:main
+inference_engine = yolo.inference_engine:main
+inference_engine_tiled = yolo.inference_engine_tiled:main

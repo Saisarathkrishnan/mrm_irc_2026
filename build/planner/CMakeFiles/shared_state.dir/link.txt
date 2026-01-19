@@ -1,0 +1,2 @@
+/usr/bin/ar qc libshared_state.a CMakeFiles/shared_state.dir/src/shared_state.cpp.o
+/usr/bin/ranlib libshared_state.a

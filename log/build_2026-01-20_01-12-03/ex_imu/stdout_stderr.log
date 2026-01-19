@@ -1,0 +1,43 @@
+running egg_info
+creating ../build/ex_imu/ex_imu.egg-info
+writing ../build/ex_imu/ex_imu.egg-info/PKG-INFO
+writing dependency_links to ../build/ex_imu/ex_imu.egg-info/dependency_links.txt
+writing entry points to ../build/ex_imu/ex_imu.egg-info/entry_points.txt
+writing requirements to ../build/ex_imu/ex_imu.egg-info/requires.txt
+writing top-level names to ../build/ex_imu/ex_imu.egg-info/top_level.txt
+writing manifest file '../build/ex_imu/ex_imu.egg-info/SOURCES.txt'
+reading manifest file '../build/ex_imu/ex_imu.egg-info/SOURCES.txt'
+writing manifest file '../build/ex_imu/ex_imu.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/ex_imu/build
+creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/ex_imu/build/lib
+creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/ex_imu/build/lib/ex_imu
+copying ex_imu/imu_node.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/ex_imu/build/lib/ex_imu
+copying ex_imu/__init__.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/ex_imu/build/lib/ex_imu
+copying ex_imu/imu_node_rm.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/ex_imu/build/lib/ex_imu
+copying ex_imu/imu_quat.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/ex_imu/build/lib/ex_imu
+running install
+running install_lib
+creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/lib/python3.10/site-packages/ex_imu
+copying /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/ex_imu/build/lib/ex_imu/imu_node.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/lib/python3.10/site-packages/ex_imu
+copying /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/ex_imu/build/lib/ex_imu/__init__.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/lib/python3.10/site-packages/ex_imu
+copying /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/ex_imu/build/lib/ex_imu/imu_node_rm.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/lib/python3.10/site-packages/ex_imu
+copying /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/ex_imu/build/lib/ex_imu/imu_quat.py -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/lib/python3.10/site-packages/ex_imu
+byte-compiling /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/lib/python3.10/site-packages/ex_imu/imu_node.py to imu_node.cpython-310.pyc
+byte-compiling /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/lib/python3.10/site-packages/ex_imu/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/lib/python3.10/site-packages/ex_imu/imu_node_rm.py to imu_node_rm.cpython-310.pyc
+byte-compiling /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/lib/python3.10/site-packages/ex_imu/imu_quat.py to imu_quat.cpython-310.pyc
+running install_data
+creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/share/ament_index
+creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/share/ament_index/resource_index
+creating /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/share/ament_index/resource_index/packages
+copying resource/ex_imu -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/share/ament_index/resource_index/packages
+copying package.xml -> /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/share/ex_imu
+running install_egg_info
+Copying ../build/ex_imu/ex_imu.egg-info to /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/lib/python3.10/site-packages/ex_imu-0.0.0-py3.10.egg-info
+running install_scripts
+Installing ex_imu script to /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/lib/ex_imu
+Installing ex_imu_quat script to /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/lib/ex_imu
+Installing rm_auto script to /home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/install/ex_imu/lib/ex_imu
+writing list of installed files to '/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/ex_imu/install.log'

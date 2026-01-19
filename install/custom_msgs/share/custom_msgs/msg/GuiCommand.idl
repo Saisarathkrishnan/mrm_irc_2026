@@ -1,0 +1,22 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from custom_msgs/msg/GuiCommand.msg
+// generated code does not contain a copyright notice
+
+
+module custom_msgs {
+  module msg {
+    struct GuiCommand {
+      int8 nav_mode;
+
+      double goal_lat;
+
+      double goal_lon;
+
+      int32 target_cone_id;
+
+      boolean set_search_skew;
+
+      int8 search_skew;
+    };
+  };
+};

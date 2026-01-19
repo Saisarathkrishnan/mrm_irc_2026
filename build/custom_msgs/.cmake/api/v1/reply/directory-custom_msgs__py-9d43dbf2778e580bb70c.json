@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "custom_msgs__py",
+		"source" : "/home/exhausted/Saisarath/stuff/MRM/mrm_irc_2026/mrm_irc_2026/build/custom_msgs/custom_msgs__py"
+	}
+}
