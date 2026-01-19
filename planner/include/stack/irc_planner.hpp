@@ -130,6 +130,11 @@ private:
     bool delivery_done_;
     rclcpp::Time delivery_start_time_;
 
+    // Duplicate GPS
+    Coordinates pickup_cone_location;
+    bool pickup_cone_location_valid = false;
+
+
     // Orientation
     double zed_yaw;
     double bno_yaw;
@@ -153,6 +158,7 @@ private:
 
     void stackRun();
     void RoverStateClassifier();
+    bool isNearPickupConeLocation(double radius_m = 3.0);
 
     // Callbacks
     void imuCallback(const custom_msgs::msg::ImuData::SharedPtr msg);
@@ -162,6 +168,7 @@ private:
     void coneCallback(const custom_msgs::msg::MarkerTag::SharedPtr cone);
     void stateCallback(const std_msgs::msg::Bool::SharedPtr state);
     void deliveredCallback(const std_msgs::msg::Bool::SharedPtr msg);
+    
 
     // Core States 
     void coordinateFollowing();
@@ -193,3 +200,4 @@ private:
 } // namespace planner
 
 #endif
+
