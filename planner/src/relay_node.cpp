@@ -14,6 +14,7 @@
 #include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_srvs/srv/trigger.hpp"
+#include "custom_msgs/msg/arm_pwm.hpp"
 
 using namespace std::chrono_literals;
 
@@ -30,12 +31,15 @@ class RelayNode : public rclcpp::Node {
 public:
     RelayNode() : Node("relay_node_udp_bridge") {
         RCLCPP_INFO(this->get_logger(), "RelayNode starting...");
+        last_arm_packet_[0]=0;
+        last_arm_packet_[1]=0;
+        last_arm_packet_[2]=0;
 
         cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "/cmd_vel", 10, std::bind(&RelayNode::cmdVelCallback, this, std::placeholders::_1));
 
-        arm_sub_ = this->create_subscription<std_msgs::msg::String>(
-            "/arm_vel", 10, std::bind(&RelayNode::armCallback, this, std::placeholders::_1));
+        arm_sub_ = this->create_subscription<custom_msgs::msg::ArmPwm>(
+            "/arm_pwm", 10, std::bind(&RelayNode::armCallback, this, std::placeholders::_1));
 
         mode_cmd_sub_ = this->create_subscription<std_msgs::msg::Bool>(
             "/autonomous_mode_cmd", 10, std::bind(&RelayNode::modeCmdCallback, this, std::placeholders::_1));
@@ -50,7 +54,9 @@ public:
         listener_thread_ = std::thread(&RelayNode::udpListenerThread, this);
         sender_thread_ = std::thread(&RelayNode::udpSenderThread, this);
 
+        
         RCLCPP_INFO(this->get_logger(), "RelayNode fully initialized.");
+
     }
 
     ~RelayNode() {
@@ -110,33 +116,36 @@ private:
 
         std::string packet;
         if (direction == 1)
-            packet = "L" + std::to_string(static_cast<int>(left_pct)) + "R" + std::to_string(static_cast<int>(right_pct)) + "E";
+            packet = "L" + std::to_string(static_cast<int>(left_pct)) + "R" + std::to_string(static_cast<int>(right_pct)) ;
         else if (direction == 2)
-            packet = "L-" + std::to_string(static_cast<int>(left_pct)) + "R-" + std::to_string(static_cast<int>(right_pct)) + "E";
+            packet = "L-" + std::to_string(static_cast<int>(left_pct)) + "R-" + std::to_string(static_cast<int>(right_pct)) ;
         else if (direction == 3)
-            packet = "L-" + std::to_string(static_cast<int>(left_pct)) + "R" + std::to_string(static_cast<int>(right_pct)) + "E";
+            packet = "L-" + std::to_string(static_cast<int>(left_pct)) + "R" + std::to_string(static_cast<int>(right_pct)) ;
         else
-            packet = "L" + std::to_string(static_cast<int>(left_pct)) + "R-" + std::to_string(static_cast<int>(right_pct)) + "E";
-
+            packet = "L" + std::to_string(static_cast<int>(left_pct)) + "R-" + std::to_string(static_cast<int>(right_pct)) ;
         {
             std::lock_guard<std::mutex> lock(mtx_);
             last_motor_packet_ = packet;
+            std::cout<<"mootoe  lllllllll empty"<<last_motor_packet_<<std::endl;
         }
 
         RCLCPP_INFO(this->get_logger(), "[AUTONOMOUS] Motor packet updated: %s", packet.c_str());
     }
 
-    void armCallback(const std_msgs::msg::String::SharedPtr msg) {
+    void armCallback(const custom_msgs::msg::ArmPwm::SharedPtr msg) {
         if (!autonomous_mode_.load()) {
             return;
         }
 
         {
             std::lock_guard<std::mutex> lock(mtx_);
-            last_arm_packet_ = msg->data;
+            last_arm_data[0] = msg->link1;
+            last_arm_data[1] = msg->link2;
+            last_arm_data[2] = msg->gripper;
+            last_arm_packet_="T"+std::to_string(static_cast<int>(msg->link1))+"U"+std::to_string(static_cast<int>(msg->link2))+"G"+std::to_string(static_cast<int>(0));
         }
 
-        RCLCPP_INFO(this->get_logger(), "[AUTONOMOUS] Arm packet received: %s", msg->data.c_str());
+        //RCLCPP_INFO(this->get_logger(), "[AUTONOMOUS] Arm packet received: %s", msg->data.c_str());
     }
 
     void modeCmdCallback(const std_msgs::msg::Bool::SharedPtr msg) {
@@ -217,22 +226,25 @@ private:
 
                 if (!mode) {
                     if (last_motor_packet_.empty())
-                        last_motor_packet_ = "L0R0E";
+                        last_motor_packet_ = "L0R0T0U0G0E";
 
                     packet = last_manual_packet_ + "|" + last_motor_packet_ + "|Z0";
                     // send manual packet
                     sendto(sockfd, packet.c_str(), packet.size(), 0, (sockaddr*)&esp, sizeof(esp));
                     RCLCPP_INFO(this->get_logger(), "[MANUAL] Sent UDP packet: %s", packet.c_str());
                 } else {
-                    std::string motor = last_motor_packet_.empty() ? "L0R0E" : last_motor_packet_;
-                    if (last_arm_packet_.empty())
+                    //std::cout<<"mootoe  afsfasfasf empty"<<last_motor_packet_<<std::endl;
+                    std::string motor = last_motor_packet_.empty() ? "L0R0T0U0G0E" : last_motor_packet_;
+                    if (last_arm_packet_.empty()){
                         packet = motor + "|Z1";
-                    else
-                        packet = last_arm_packet_ + motor + "|Z1";
-
+                        std::cout<<"mootoe  armpacket empty"<<motor<<std::endl;
+                    }else{
+                        packet = motor +last_arm_packet_+"E|Z1";
+                        std::cout<<"ooga booga"<<motor<<std::endl;
+                    }
                     // send autonomous packet
                     sendto(sockfd, packet.c_str(), packet.size(), 0, (sockaddr*)&esp, sizeof(esp));
-                    RCLCPP_INFO(this->get_logger(), "[AUTONOMOUS] Sent UDP packet: %s", packet.c_str());
+                    RCLCPP_INFO(this->get_logger(), "[AUTONOMOUS] Sent UDP packet yes yes: %s\n", packet.c_str());
                 }
             }
 
@@ -251,11 +263,12 @@ private:
 
     std::mutex mtx_;
     std::string last_manual_packet_ = "M0X0Y0P0Q0A0S0J0DE";
-    std::string last_motor_packet_  = "L0R0E";
-    std::string last_arm_packet_    = "";
+    std::string last_motor_packet_  = "L0R0T0U0G0E";
+    std::string last_arm_packet_="";
+    int last_arm_data[3];
 
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
-    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr arm_sub_;
+    rclcpp::Subscription<custom_msgs::msg::ArmPwm>::SharedPtr arm_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr mode_cmd_sub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr mode_state_pub_;
     rclcpp::TimerBase::SharedPtr mode_timer_;

@@ -1,5 +1,4 @@
 from setuptools import setup
-from glob import glob
 import os
 
 package_name = 'yolo'
@@ -13,7 +12,8 @@ setup(
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        (os.path.join('share', package_name), ['yolo/cone_v1.engine']),
+        (os.path.join('share', package_name, 'models'),
+         ['yolo/cone_v1.engine']),
     ],
 
     install_requires=['setuptools'],
@@ -21,13 +21,14 @@ setup(
 
     maintainer='vighneshreddy',
     maintainer_email='example@email.com',
-    description='TensorRT YOLOv8 cone detection node for Jetson Orin (ROS 2 Humble)',
+    description='TensorRT YOLOv8 cone detection nodes (single + tiled) with Flask streaming',
     license='MIT',
 
     entry_points={
         'console_scripts': [
             'inference = yolo.inference_node:main',
             'inference_engine = yolo.inference_engine:main',
+            'inference_engine_tiled = yolo.inference_engine_tiled:main',
         ],
     },
 )

@@ -11,6 +11,7 @@ set(msg_files
   "msg/GuiCommand.msg"
   "msg/PlannerStatus.msg"
   "msg/GpsDetails.msg"
+  "msg/ArmPwm.msg"
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}

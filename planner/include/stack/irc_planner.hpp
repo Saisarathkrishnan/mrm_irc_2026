@@ -10,47 +10,26 @@
 
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 #include "geometry_msgs/msg/twist.hpp"
 
-#include "std_msgs/msg/string.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_srvs/srv/trigger.hpp"
 
 #include "custom_msgs/msg/marker_tag.hpp"
 #include "custom_msgs/msg/imu_data.hpp"
-#include "custom_msgs/msg/gui_command.hpp"
 #include "custom_msgs/msg/planner_status.hpp"
-
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl_conversions/pcl_conversions.h>
 
 namespace planner
 {
 
-// Constants 
+constexpr double kRoverLength  = 1.50;
+constexpr double kRoverBreadth = 1.25;
 
-const double kRoverLength  = 1.50;
-const double kRoverBreadth = 1.25;
+constexpr double kMaxLinearVel  = 1.0;
+constexpr double kMaxAngularVel = 1.5;
+constexpr double kDistanceThreshold = 1.0;
 
-const double kMaxLinearVel  = 0.8;
-const double kMinLinearVel  = 0.0;
-const double kMinAngularVel = 1.0;
-const double kMaxAngularVel = 1.5;
-
-const double kMaxObsThreshold = 3.0;
-const double kMinObsThreshold = 0.5;
-
-const double kMaxXObsDistThreshold = 2.0;
-const double kMinXObsDistThreshold = 1.0;
-const double kMaxYObjDistThreshold = 2.0;
-const double kMinYObsThreshold = 0.0;
-const double kMinYObjDistThreshold = 0.0;
-
-const double kStopVel = 0.0;
-const double kDistanceThreshold = 2.0;
-
-// All State Machines
 
 enum State
 {
@@ -59,25 +38,24 @@ enum State
     kCoordinateFollowing,
     kSearchPattern,
     kConeFollowing,
-    kObstacleAvoidance,
     kObjectDelivery
 };
 
-enum SearchPatternType
+enum SearchPattern
 {
-    kFaceForward,
-    kMoveForward,
-    kTurnRight,
-    kTurnLeft,
-    kOffsetTurn,
+    kTurnA,
+    kTurnB,
+    kTurnC,
+    kMoveForward
 };
 
 enum SearchSkew
 {
-    kNoSkew    = -1,
-    kLeftSkew  = 0,
+    kNoSkew    = 0,
+    kLeftSkew  = -1,
     kRightSkew = 1
 };
+
 
 struct Coordinates
 {
@@ -85,95 +63,107 @@ struct Coordinates
     double longitude;
 };
 
+
 class SensorCallback : public rclcpp::Node
 {
 public:
     SensorCallback();
 
 private:
-    // Publishers 
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr vel_pub;
-    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr arm_pub;
     rclcpp::Publisher<custom_msgs::msg::PlannerStatus>::SharedPtr status_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr deliver_pub_;
 
-    // Subscribers
     rclcpp::Subscription<custom_msgs::msg::ImuData>::SharedPtr imu_sub_;
+    rclcpp::Subscription<custom_msgs::msg::ImuData>::SharedPtr external_imu_sub_;
     rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr gps_sub_;
     rclcpp::Subscription<custom_msgs::msg::MarkerTag>::SharedPtr cone_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcl_sub_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr auto_sub_;
-    rclcpp::Subscription<custom_msgs::msg::GuiCommand>::SharedPtr gui_sub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr delivered_sub_;
 
-    // Services & Timers
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr toggle_client_;
     rclcpp::TimerBase::SharedPtr stack_timer_;
 
     State CurrState;
-    State PrevState;
-    SearchPatternType FollowPattern;
+    SearchPattern FollowPattern;
 
-    // Various Flags
-    bool nav_selected;
-    bool gps_goal_set;
-    bool cone_detect;
-    bool gps_goal_reached;
-    bool cone_goal_reached;
-    bool obstacle_detect;
-    bool rover_state;
-    bool last_rover_state;
-    bool gps_aligned_;
-    bool delivery_active_;
-    rclcpp::Time delivery_start_time_;
-    rclcpp::Time last_cone_time_;
-
-    // Navigation Variables
     int nav_mode;
     int target_cone_id_;
     bool nav_select_done_;
 
-    // Measurements
-    double current_orientation;
-    double cone_x;
-    double cone_y;
-    double obs_x;
-    double obs_y;
+    bool rover_state;
+    bool last_rover_state;
 
-    // SEARCH FSM internals
-    bool search_init_;
-    bool search_timing_;
-    rclcpp::Time search_end_time_;
-    double search_base_heading_;
-    double search_offset_deg_;
-    SearchSkew search_skew;
-
+    // GPS Related
+    bool gps_goal_set;
+    bool gps_goal_reached;
+    bool gps_aligned_;
     Coordinates curr_location;
     Coordinates goal_location;
-    double locked_bearing_deg_;
-    bool   bearing_locked_;
     rclcpp::Time last_gps_time_;
 
-    std::vector<double> obs_avoid_linear;
-    std::vector<double> obs_avoid_angular;
+    // Cone Related
+    bool cone_detect;
+    bool cone_goal_reached;
+    double cone_x;
+    double cone_y;
+    rclcpp::Time last_cone_time_;
+
+    // Obstacle Related
+    bool obstacle_detect;
+    double obs_x;
+    double obs_y;
+    sensor_msgs::msg::PointCloud2::SharedPtr last_obstacle_cloud_;
+
+    // Search Related
+    bool search_ref_set_;
+    bool spot_turn_back_;
+    bool spot_done_;
+    int search_cycle_;
+    rclcpp::Time search_end_time_;
+    double search_forward_time_;
+    SearchSkew search_skew;
+
+    // Delivery Related
+    bool delivery_requested_;
+    bool delivery_done_;
+    rclcpp::Time delivery_start_time_;
+
+    // Orientation
+    double zed_yaw;
+    double bno_yaw;
+    double current_orientation;
+
     std::vector<double> obj_follow_linear;
     std::vector<double> obj_follow_angular;
 
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud;
-
     std::mutex state_mutex_;
 
-    // Core Functions
+    //idk bro
+    rclcpp::Time last_cloud_time_;
+
+    bool bearing_locked_;
+    double locked_bearing_deg_;
+
+    bool search_aligned_;
+    bool search_timing_;
+    double search_offset_deg_;
+
+
     void stackRun();
     void RoverStateClassifier();
 
     // Callbacks
-    void imuCallback(const custom_msgs::msg::ImuData::SharedPtr imu_msg);
+    void imuCallback(const custom_msgs::msg::ImuData::SharedPtr msg);
+    void externalImuCallback(const custom_msgs::msg::ImuData::SharedPtr msg);
     void gpsCallback(const sensor_msgs::msg::NavSatFix::SharedPtr fix);
     void pclCallback(const sensor_msgs::msg::PointCloud2::SharedPtr cloud_msg);
     void coneCallback(const custom_msgs::msg::MarkerTag::SharedPtr cone);
     void stateCallback(const std_msgs::msg::Bool::SharedPtr state);
-    void guiCommandCallback(const custom_msgs::msg::GuiCommand::SharedPtr msg);
+    void deliveredCallback(const std_msgs::msg::Bool::SharedPtr msg);
 
-    // State Functions
+    // Core States 
     void coordinateFollowing();
     void obstacleAvoidance();
     void objectFollowing();
@@ -181,7 +171,7 @@ private:
     void objectDelivery();
     void navigationModeSelect();
 
-    // Helper Functions
+    // Helpers
     void publishVel(const geometry_msgs::msg::Twist& msg);
     void hardStop();
     void disableAutonomous();
@@ -191,8 +181,7 @@ private:
     void resetSearchPattern();
     bool isConeFresh();
 
-    // Math Functions 
-    std::vector<double> straightLineEquation(double x1, double y1,double x2, double y2);
+    std::vector<double> straightLineEquation(double x1, double y1, double x2, double y2);
 
     double haversine(Coordinates curr, Coordinates dest);
     double gpsBearing(Coordinates curr, Coordinates dest);
@@ -201,6 +190,6 @@ private:
     double normalize360(double angle);
 };
 
-} 
+} // namespace planner
 
-#endif  
+#endif
