@@ -123,120 +123,126 @@ namespace planner
 
     // Planner Main control loop
     void SensorCallback::stackRun()
+{
+    std::lock_guard<std::mutex> lock(state_mutex_);
+
+    obstacleClassifier();
+    current_orientation = zed_yaw;
+    auto now = this->get_clock()->now();
+
+    if (cone_detect && !isConeFresh())
+        cone_detect = false;
+
+    custom_msgs::msg::PlannerStatus s;
+    s.state = CurrState;
+    s.nav_mode = nav_mode;
+    s.curr_lat = curr_location.latitude;
+    s.curr_lon = curr_location.longitude;
+    s.goal_lat = goal_location.latitude;
+    s.goal_lon = goal_location.longitude;
+    s.current_yaw_deg = current_orientation;
+    s.cone_detected = cone_detect;
+    s.cone_x = cone_x;
+    s.cone_y = cone_y;
+    s.target_cone_id = target_cone_id_;
+    s.obstacle_detected = obstacle_detect;
+    s.gps_goal_reached = gps_goal_reached;
+    s.cone_goal_reached = cone_goal_reached;
+    s.autonomous_enabled = rover_state;
+
+    if (gps_goal_set)
     {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-
-        obstacleClassifier();
-
-        current_orientation = zed_yaw;
-
-        auto now = this->get_clock()->now();
-
-        if (cone_detect && !isConeFresh())
-            cone_detect = false;
-
-        custom_msgs::msg::PlannerStatus s;
-        s.state = CurrState;
-        s.nav_mode = nav_mode;
-        s.curr_lat = curr_location.latitude;
-        s.curr_lon = curr_location.longitude;
-        s.goal_lat = goal_location.latitude;
-        s.goal_lon = goal_location.longitude;
-        s.current_yaw_deg = current_orientation;
-        s.cone_detected = cone_detect;
-        s.cone_x = cone_x;
-        s.cone_y = cone_y;
-        s.target_cone_id = target_cone_id_;
-        s.obstacle_detected = obstacle_detect;
-        s.gps_goal_reached = gps_goal_reached;
-        s.cone_goal_reached = cone_goal_reached;
-        s.autonomous_enabled = rover_state;
-
-        if (gps_goal_set)
-        {
-            s.distance_to_goal_m = haversine(curr_location, goal_location);
-            s.target_yaw_deg =
-                gpsAngleFix(gpsBearing(curr_location, goal_location));
-            s.heading_error_deg =
-                headingError(s.target_yaw_deg, current_orientation);
-        }
-        else
-        {
-            s.distance_to_goal_m = -1.0;
-            s.target_yaw_deg = 0.0;
-            s.heading_error_deg = 0.0;
-        }
-
-        s.stamp = now;
-        status_pub_->publish(s);
-
-        if (!rover_state)
-        {
-            publishVel(geometry_msgs::msg::Twist());
-            return;
-        }
-
-        if (CurrState == kNavigationModeSelect)
-        {
-            navigationModeSelect();
-            return;
-        }
-
-        if (nav_mode == 0 && !gps_goal_set)
-        {
-            publishVel(geometry_msgs::msg::Twist());
-            return;
-        }
-
-        if (nav_mode == 1 &&
-            CurrState == kSearchPattern &&
-            target_cone_id_ <= 0)
-        {
-            publishVel(geometry_msgs::msg::Twist());
-            return;
-        }
-
-        RoverStateClassifier();
-        setGoalStatus();
-
-        if (obstacle_detect && rover_state &&
-            ((CurrState == kSearchPattern && FollowPattern == kMoveForward) ||
-             CurrState == kConeFollowing ||
-             CurrState == kCoordinateFollowing))
-        {
-            obstacleAvoidance();
-            return;
-        }
-
-        if (nav_mode == 1 && isConeFresh() &&
-            CurrState != kConeFollowing)
-        {
-            CurrState = kConeFollowing;
-        }
-
-        switch (CurrState)
-        {
-        case kSearchPattern:
-            callSearchPattern();
-            break;
-
-        case kConeFollowing:
-            objectFollowing();
-            break;
-
-        case kCoordinateFollowing:
-            coordinateFollowing();
-            break;
-
-        case kObjectDelivery:
-            objectDelivery();
-            break;
-
-        default:
-            publishVel(geometry_msgs::msg::Twist());
-            break;
-        }
+        s.distance_to_goal_m = haversine(curr_location, goal_location);
+        s.target_yaw_deg = gpsAngleFix(gpsBearing(curr_location, goal_location));
+        s.heading_error_deg = headingError(s.target_yaw_deg, current_orientation);
     }
+    else
+    {
+        s.distance_to_goal_m = -1.0;
+        s.target_yaw_deg = 0.0;
+        s.heading_error_deg = 0.0;
+    }
+
+    s.stamp = now;
+    status_pub_->publish(s);
+
+    if (!rover_state)
+    {
+        publishVel(geometry_msgs::msg::Twist());
+        return;
+    }
+
+    if (CurrState == kNavigationModeSelect)
+    {
+        navigationModeSelect();
+        return;
+    }
+
+    if (nav_mode == 0 && !gps_goal_set)
+    {
+        publishVel(geometry_msgs::msg::Twist());
+        return;
+    }
+
+    if (nav_mode == 1 &&
+        CurrState == kSearchPattern &&
+        target_cone_id_ <= 0)
+    {
+        publishVel(geometry_msgs::msg::Twist());
+        return;
+    }
+
+    RoverStateClassifier();
+    setGoalStatus();
+
+    /* ================= OBSTACLE AVOIDANCE POLICY =================
+       - Search TURN A/B/C        → NO
+       - Search MOVE FORWARD      → YES
+       - Cone Following           → YES
+       - GPS Following            → YES
+    =============================================================== */
+
+    if (obstacle_detect && rover_state &&
+        (
+            CurrState == kConeFollowing ||
+            CurrState == kCoordinateFollowing ||
+            (CurrState == kSearchPattern && FollowPattern == kMoveForward)
+        ))
+    {
+        obstacleAvoidance();
+        return;
+    }
+
+    if (nav_mode == 1 && isConeFresh() &&
+        CurrState != kConeFollowing)
+    {
+        CurrState = kConeFollowing;
+    }
+
+    switch (CurrState)
+    {
+    case kSearchPattern:
+        callSearchPattern();
+        break;
+
+    case kConeFollowing:
+        objectFollowing();
+        break;
+
+    case kCoordinateFollowing:
+        coordinateFollowing();
+        break;
+
+    case kObjectDelivery:
+        objectDelivery();
+        break;
+
+    default:
+        publishVel(geometry_msgs::msg::Twist());
+        break;
+    }
+}
+
 
     // Planner state decision logic
     void SensorCallback::RoverStateClassifier()
@@ -710,56 +716,76 @@ namespace planner
     // Function for obstacle avoidance
 
     void SensorCallback::obstacleAvoidance()
+{
+    geometry_msgs::msg::Twist cmd;
+
+    const double front = obs_x;
+    const double dir = (obs_y >= 0.0) ? -1.0 : 1.0; // obstacle left → turn right
+
+    if (front < 1.0)
     {
-        geometry_msgs::msg::Twist cmd;
+        cmd.linear.x = 0.0;
+        cmd.angular.z = dir * kMaxAngularVel;
 
-        const double front = obs_x;
-        const double dir = (obs_y >= 0.0) ? -1.0 : 1.0; // obstacle left → turn right
-
-        if (front < 1.0)
-        {
-            // Stop and turn away
-            cmd.linear.x = 0.0;
-            cmd.angular.z = dir * kMaxAngularVel;
-            RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 300, "[OBS][AVOID] Obstacle Straight Ahead lil bro | front=%.2f | lin_vel=0.00 ang_vel=%.2f", front, cmd.angular.z);
-        }
-        else
-        {
-            // Move forward and steer away
-            cmd.linear.x = 0.4;
-            cmd.angular.z = dir * 0.8;
-        }
-
-        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 300, "[OBS][AVOID] front=%.2f y=%.2f | lin=%.2f ang=%.2f", front, obs_y, cmd.linear.x, cmd.angular.z);
-        publishVel(cmd);
+        RCLCPP_INFO_THROTTLE(
+            get_logger(), *get_clock(), 300,
+            "[OBS][AVOID][STOP_TURN] dist=%.2f side=%s lin=0.00 ang=%.2f",
+            front,
+            (obs_y >= 0.0) ? "LEFT" : "RIGHT",
+            cmd.angular.z);
     }
+    else
+    {
+        cmd.linear.x = -1.0;
+        cmd.angular.z = dir * 0.8;
+
+        RCLCPP_INFO_THROTTLE(
+            get_logger(), *get_clock(), 300,
+            "[OBS][AVOID][STEER] dist=%.2f side=%s lin=%.2f ang=%.2f",
+            front,
+            (obs_y >= 0.0) ? "LEFT" : "RIGHT",
+            cmd.linear.x,
+            cmd.angular.z);
+    }
+
+    publishVel(cmd);
+}
+
 
     // Follows the detected cone using its relative position.
 
-    void SensorCallback::objectFollowing()
+	  void SensorCallback::objectFollowing()
+{
+    if (!cone_detect)
     {
-        if (!cone_detect)
-        {
-            RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000, "[FOLLOW] Target lost → stop");
-            publishVel(geometry_msgs::msg::Twist());
-            return;
-        }
-
-        geometry_msgs::msg::Twist vel;
-
-        vel.linear.x = obj_follow_linear[0] * cone_x + obj_follow_linear[1];
-        double ang = obj_follow_angular[0] * std::abs(cone_y) + obj_follow_angular[1];
-        vel.angular.z = std::copysign(ang, -cone_y);
-
-        // Slow down while turning
-        vel.linear.x *= (1.0 - std::min(std::abs(vel.angular.z), 1.0));
-
-        vel.linear.x = std::clamp(vel.linear.x, 0.0, kMaxLinearVel);
-        vel.angular.z = std::clamp(vel.angular.z, -kMaxAngularVel, kMaxAngularVel);
-
-        RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 200, "[FOLLOW] cone_x=%.3f cone_y=%.3f lin_vel=%.3f ang_vel=%.3f", cone_x, cone_y, vel.linear.x, vel.angular.z);
-        publishVel(vel);
+        publishVel(geometry_msgs::msg::Twist());
+        return;
     }
+
+    geometry_msgs::msg::Twist cmd;
+
+    constexpr double k_ang = 0.9;
+    constexpr double k_lin = 0.6;
+    constexpr double y_deadband = 0.06;
+    constexpr double max_ang = 0.7;
+    constexpr double min_lin = 0.4;
+
+    double ang_err = cone_y;
+    if (std::abs(ang_err) < y_deadband)
+        ang_err = 0.0;
+
+    cmd.angular.z = std::clamp(-k_ang * ang_err, -max_ang, max_ang);
+
+    double lin = k_lin * cone_x;
+    double heading_scale =
+        1.0 - std::min(std::abs(cmd.angular.z) / max_ang, 0.7);
+
+    cmd.linear.x =
+        std::clamp(lin * heading_scale, min_lin, kMaxLinearVel);
+
+    publishVel(cmd);
+}
+
 
     // Controls how the rover searches when no cone is visible.
     void SensorCallback::callSearchPattern()
@@ -767,8 +793,8 @@ namespace planner
         geometry_msgs::msg::Twist cmd;
         auto now = this->get_clock()->now();
 
-        const double ang_vel = 0.9;
-        const double lin_vel = 0.6;
+        const double ang_vel = 1.0;
+        const double lin_vel = 0.9;
 
         /* ---------- cone interrupt ---------- */
         if (isConeFresh())
@@ -1131,7 +1157,7 @@ namespace planner
 
     bool SensorCallback::isConeFresh()
     {
-        return (this->get_clock()->now() - last_cone_time_).seconds() < 1.5;
+        return (this->get_clock()->now() - last_cone_time_).seconds() < 0.6;
     }
 
     // Math Functions :

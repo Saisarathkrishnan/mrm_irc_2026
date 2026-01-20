@@ -38,7 +38,7 @@ constexpr double kRoverBreadth = 1.25;
 
 constexpr double kMaxLinearVel  = 1.0;
 constexpr double kMaxAngularVel = 1.5;
-constexpr double kDistanceThreshold = 1.0;
+constexpr double kDistanceThreshold = 2.0;
 
 
 enum State

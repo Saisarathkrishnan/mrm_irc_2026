@@ -17,7 +17,13 @@ find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(pcl_ros REQUIRED)
-find_package(cv_bridge REQUIRED)
+find_package(PCL REQUIRED COMPONENTS common filters segmentation)
+find_package(Eigen3 REQUIRED)
+
+include_directories(
+  include
+  ${PCL_INCLUDE_DIRS}
+)
 
 add_library(shared_state src/shared_state.cpp)
 target_include_directories(shared_state PUBLIC
@@ -80,14 +86,24 @@ ament_target_dependencies(motorcontroller
 )
 target_link_libraries(motorcontroller shared_state)
 
-add_executable(ditch_detector_node src/ditch_detector.cpp)
+add_executable(ditch_detector_node src/ditch_detector_2.cpp)
 target_include_directories(ditch_detector_node PRIVATE include)
 ament_target_dependencies(ditch_detector_node
   rclcpp
   sensor_msgs
-  cv_bridge
+  geometry_msgs
   pcl_conversions
-  pcl_ros
+)
+target_link_libraries(ditch_detector_node
+  ${PCL_LIBRARIES}
+  Eigen3::Eigen
+)
+add_definitions(${PCL_DEFINITIONS})
+
+add_executable(obstacle_presence_logger src/obstacle_presence_logger.cpp)
+ament_target_dependencies(obstacle_presence_logger
+  rclcpp
+  sensor_msgs
 )
 
 install(TARGETS
@@ -97,6 +113,7 @@ install(TARGETS
   imu_conversion_node
   motorcontroller
   ditch_detector_node
+  obstacle_presence_logger
   DESTINATION lib/${PROJECT_NAME}
 )
 
