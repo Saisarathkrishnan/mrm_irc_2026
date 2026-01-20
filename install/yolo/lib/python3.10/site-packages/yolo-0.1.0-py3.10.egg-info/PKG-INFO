@@ -1,8 +1,0 @@
-Metadata-Version: 2.1
-Name: yolo
-Version: 0.1.0
-Summary: TensorRT YOLOv8 cone detection nodes (single + tiled) with Flask streaming
-Maintainer: vighneshreddy
-Maintainer-email: example@email.com
-License: MIT
-Requires-Dist: setuptools

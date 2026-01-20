@@ -1,6 +1,0 @@
-source;share/ex_imu/hook/pythonpath.ps1
-source;share/ex_imu/hook/pythonpath.dsv
-source;share/ex_imu/hook/pythonpath.sh
-source;share/ex_imu/hook/ament_prefix_path.ps1
-source;share/ex_imu/hook/ament_prefix_path.dsv
-source;share/ex_imu/hook/ament_prefix_path.sh
