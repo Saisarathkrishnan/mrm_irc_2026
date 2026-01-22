@@ -901,12 +901,12 @@ void SensorCallback::obstacleAvoidance()
         {
             FollowPattern = kTurnA;
             search_end_time_ =
-                now + rclcpp::Duration::from_seconds(4.0);
+                now + rclcpp::Duration::from_seconds(3.0);
             search_ref_set_ = true;
 
             RCLCPP_INFO(
                 get_logger(),
-                "[SEARCH][INIT] L4 → R8 → L(4+skew) → FWD");
+                "[SEARCH][INIT] L3 → R6 → L(3+skew) → FWD");
             return;
         }
 
@@ -925,7 +925,7 @@ void SensorCallback::obstacleAvoidance()
             {
                 FollowPattern = kTurnB;
                 search_end_time_ =
-                    now + rclcpp::Duration::from_seconds(8.0);
+                    now + rclcpp::Duration::from_seconds(6.0);
             }
             return;
         }
@@ -950,7 +950,7 @@ void SensorCallback::obstacleAvoidance()
                     extra = search_cycle_;
 
                 search_end_time_ =
-                    now + rclcpp::Duration::from_seconds(4.0 + extra);
+                    now + rclcpp::Duration::from_seconds(3.0 + extra);
             }
             return;
         }
@@ -990,7 +990,7 @@ void SensorCallback::obstacleAvoidance()
                 search_cycle_++;
                 FollowPattern = kTurnA;
                 search_end_time_ =
-                    now + rclcpp::Duration::from_seconds(4.0);
+                    now + rclcpp::Duration::from_seconds(3.0);
             }
             return;
         }

@@ -10,7 +10,7 @@ public:
     ObstaclePresenceLogger()
     : Node("obstacle_presence_logger"), obstacle_detected_(false)
     {
-        declare_parameter<std::string>("cloud_topic", "/fake_wall_cloud");
+        declare_parameter<std::string>("cloud_topic", "/local_grid_obstacle");
         declare_parameter<double>("min_x", 0.5);
         declare_parameter<double>("max_x", 3.0);
         declare_parameter<double>("half_width", 0.4);

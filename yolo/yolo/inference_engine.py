@@ -16,7 +16,7 @@ import threading, time
 
 YOLO_CONF_THRESH = 0.50
 NMS_IOU_THRESH = 0.45
-ENGINE_PATH = "/home/mrmnavjet/IRC2026/ircWS/src/yolo/yolo/cone_v1.engine"
+ENGINE_PATH = "/home/mrmnavjet/IRC2026/ircWS/mrm_irc_2026/yolo/yolo/cone_v1.engine"
 
 FX = 475.26
 
