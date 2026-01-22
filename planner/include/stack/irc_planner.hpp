@@ -48,7 +48,8 @@ enum State
     kCoordinateFollowing,
     kSearchPattern,
     kConeFollowing,
-    kObjectDelivery
+    kObjectDelivery,
+    kObstacleAvoidance
 };
 
 enum SearchPattern
@@ -134,6 +135,10 @@ private:
     rclcpp::Time search_end_time_;
     double search_forward_time_;
     SearchSkew search_skew;
+    bool avoiding_obstacle_;
+    State prev_state_;
+    SearchPattern prev_search_pattern_;
+
 
     // Delivery Related
     bool delivery_requested_;
@@ -152,6 +157,11 @@ private:
 
     //idk bro
     rclcpp::Time last_cloud_time_;
+
+    // Obstacle clearance timing
+    bool obstacle_clear_timing_{false};
+    rclcpp::Time obstacle_clear_since_;
+
 
     bool bearing_locked_;
     double locked_bearing_deg_;

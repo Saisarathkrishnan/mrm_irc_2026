@@ -1,83 +1,91 @@
 #include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <cv_bridge/cv_bridge.h>
-#include <opencv2/opencv.hpp>
+#include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/float32.hpp>
 
 #include <pcl_conversions/pcl_conversions.h>
-#include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
 
-class SafetyDitchCloudFused : public rclcpp::Node {
+#include <algorithm>
+#include <vector>
+
+class DitchDetector : public rclcpp::Node
+{
 public:
-  SafetyDitchCloudFused() : Node("safety_ditch_cloud_fused") {
+    DitchDetector() : Node("ditch_detector"), ditch_active_(false), clear_count_(0)
+    {
+        sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+            "/zed/zed_node/point_cloud/cloud_registered", 10,
+            std::bind(&DitchDetector::cloudCb, this, std::placeholders::_1));
 
-    depth_sub_ = create_subscription<sensor_msgs::msg::Image>(
-      "/zed/zed_node/depth/depth_registered",10,
-      std::bind(&SafetyDitchCloudFused::depthCb,this,std::placeholders::_1));
-
-    rtab_cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-      "/local_grid_obstacle",10,
-      std::bind(&SafetyDitchCloudFused::rtabCb,this,std::placeholders::_1));
-
-    pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
-      "/local_grid_safe",10);
-  }
+        ditch_pub_ = this->create_publisher<std_msgs::msg::Bool>("/ditch_detected", 10);
+        depth_pub_ = this->create_publisher<std_msgs::msg::Float32>("/ditch_depth", 10);
+    }
 
 private:
-  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr rtab_cloud_sub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_;
+    void cloudCb(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
+    {
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
+        pcl::fromROSMsg(*msg, *cloud);
 
-  pcl::PointCloud<pcl::PointXYZ>::Ptr rtab_cloud_{new pcl::PointCloud<pcl::PointXYZ>};
+        std::vector<float> z_vals;
+        z_vals.reserve(1000);
 
-  void rtabCb(const sensor_msgs::msg::PointCloud2::SharedPtr msg){
-    pcl::fromROSMsg(*msg,*rtab_cloud_);
-  }
+        for (const auto &p : cloud->points)
+        {
+            if (!std::isfinite(p.z)) continue;
+            if (p.x < 0.5 || p.x > 3.0) continue;
+            if (p.y < -0.6 || p.y > 0.6) continue;
+            if (p.z < -2.0 || p.z > 0.3) continue;
+            z_vals.push_back(p.z);
+        }
 
-  void depthCb(const sensor_msgs::msg::Image::SharedPtr msg){
-    if(rtab_cloud_->empty()) return;
+        if (z_vals.size() < 80) return;
 
-    auto img=cv_bridge::toCvCopy(msg)->image;
-    int cx=img.cols/2;
-    int cy=img.rows/2+40;
+        std::sort(z_vals.begin(), z_vals.end());
 
-    bool ditch=false;
+        size_t base_idx = static_cast<size_t>(z_vals.size() * 0.15);
+        float ground_z = z_vals[base_idx];
+        float min_z = z_vals.front();
+        float drop = ground_z - min_z;
 
-    for(int dx=-60;dx<=60;dx+=4){
-      float dn=img.at<float>(cy,cx+dx);
-      float df=img.at<float>(cy+8,cx+dx);
+        constexpr float DETECT_DROP = 0.15;
+        constexpr float CLEAR_DROP  = 0.05;
+        constexpr int   CLEAR_FRAMES = 6;
 
-      if(!std::isfinite(df)) { ditch=true; break; }
-      if(std::isfinite(dn) && (df-dn>0.6 || (dn<1.0 && df>2.2))){
-        ditch=true; break;
-      }
+        if (drop > DETECT_DROP)
+        {
+            ditch_active_ = true;
+            clear_count_ = 0;
+        }
+        else if (ditch_active_ && drop < CLEAR_DROP)
+        {
+            if (++clear_count_ > CLEAR_FRAMES)
+                ditch_active_ = false;
+        }
+
+        std_msgs::msg::Bool dmsg;
+        dmsg.data = ditch_active_;
+        ditch_pub_->publish(dmsg);
+
+        std_msgs::msg::Float32 fmsg;
+        fmsg.data = drop;
+        depth_pub_->publish(fmsg);
     }
 
-    pcl::PointCloud<pcl::PointXYZ> out=*rtab_cloud_;
+    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr ditch_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr depth_pub_;
 
-    if(ditch){
-      for(float x=0.7;x<=1.4;x+=0.05)
-        for(float y=-0.6;y<=0.6;y+=0.05)
-          for(float z=0.0;z<=0.6;z+=0.05)
-            out.points.emplace_back(x,y,z);
-    }
-
-    out.width=out.points.size();
-    out.height=1;
-    out.is_dense=true;
-
-    sensor_msgs::msg::PointCloud2 ros_out;
-    pcl::toROSMsg(out,ros_out);
-    ros_out.header.frame_id="base_link";
-    ros_out.header.stamp=now();
-    pub_->publish(ros_out);
-  }
+    bool ditch_active_;
+    int clear_count_;
 };
 
-int main(int argc,char** argv){
-  rclcpp::init(argc,argv);
-  rclcpp::spin(std::make_shared<SafetyDitchCloudFused>());
-  rclcpp::shutdown();
-  return 0;
+int main(int argc, char **argv)
+{
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<DitchDetector>());
+    rclcpp::shutdown();
+    return 0;
 }

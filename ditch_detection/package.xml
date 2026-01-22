@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd"
+            schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+
+  <name>ditch_detection</name>
+  <version>0.0.0</version>
+
+  <description>
+    Gap-based ditch detection using ZED pointclouds with TF correction and fake obstacle injection
+  </description>
+
+  <maintainer email="vighneshreddysatti@gmail.com">mrmnavjet</maintainer>
+  <license>Apache-2.0</license>
+
+  <!-- Build system -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Core ROS -->
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+
+  <!-- PCL -->
+  <depend>pcl_conversions</depend>
+  <depend>pcl_msgs</depend>
+
+  <!-- TF (REQUIRED for frame correction) -->
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_sensor_msgs</depend>
+
+  <!-- System dependency for linking -->
+  <exec_depend>libpcl-dev</exec_depend>
+
+  <!-- Testing -->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+
+</package>

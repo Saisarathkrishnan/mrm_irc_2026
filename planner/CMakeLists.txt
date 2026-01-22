@@ -5,6 +5,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# ---------------- Dependencies ----------------
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -15,6 +16,10 @@ find_package(nav_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+
+find_package(cv_bridge REQUIRED)
+find_package(OpenCV REQUIRED)
+
 find_package(pcl_conversions REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common filters segmentation)
@@ -25,6 +30,9 @@ include_directories(
   ${PCL_INCLUDE_DIRS}
 )
 
+add_definitions(${PCL_DEFINITIONS})
+
+# ---------------- Shared State ----------------
 add_library(shared_state src/shared_state.cpp)
 target_include_directories(shared_state PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -36,11 +44,11 @@ ament_target_dependencies(shared_state
   custom_msgs
 )
 
+# ---------------- Planner ----------------
 add_executable(planner_node
   src/main.cpp
   src/irc_planner.cpp
 )
-target_include_directories(planner_node PRIVATE include)
 ament_target_dependencies(planner_node
   rclcpp
   std_msgs
@@ -55,8 +63,8 @@ ament_target_dependencies(planner_node
 )
 target_link_libraries(planner_node shared_state)
 
+# ---------------- Relay ----------------
 add_executable(relay_node src/relay_node.cpp)
-target_include_directories(relay_node PRIVATE include)
 ament_target_dependencies(relay_node
   rclcpp
   geometry_msgs
@@ -65,8 +73,8 @@ ament_target_dependencies(relay_node
 )
 target_link_libraries(relay_node shared_state)
 
+# ---------------- IMU Conversion ----------------
 add_executable(imu_conversion_node src/imu_conversion.cpp)
-target_include_directories(imu_conversion_node PRIVATE include)
 ament_target_dependencies(imu_conversion_node
   rclcpp
   sensor_msgs
@@ -77,8 +85,8 @@ ament_target_dependencies(imu_conversion_node
 )
 target_link_libraries(imu_conversion_node shared_state)
 
+# ---------------- Motor Controller ----------------
 add_executable(motorcontroller src/motorcontroller.cpp)
-target_include_directories(motorcontroller PRIVATE include)
 ament_target_dependencies(motorcontroller
   rclcpp
   geometry_msgs
@@ -86,33 +94,62 @@ ament_target_dependencies(motorcontroller
 )
 target_link_libraries(motorcontroller shared_state)
 
-add_executable(ditch_detector_node src/ditch_detector_2.cpp)
-target_include_directories(ditch_detector_node PRIVATE include)
-ament_target_dependencies(ditch_detector_node
+# ---------------- WALL NODE (FIXED) ----------------
+add_executable(wall_node
+  src/wall.cpp
+)
+ament_target_dependencies(wall_node
   rclcpp
   sensor_msgs
-  geometry_msgs
+  std_msgs
   pcl_conversions
 )
-target_link_libraries(ditch_detector_node
+target_link_libraries(wall_node
+  ${PCL_LIBRARIES}
+)
+
+# ---------------- Inject Node ----------------
+add_executable(inject_node src/inject.cpp)
+ament_target_dependencies(inject_node
+  rclcpp
+  sensor_msgs
+  pcl_conversions
+  cv_bridge
+)
+target_link_libraries(inject_node
+  ${PCL_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+)
+
+# ---------------- Ditch RANSAC ----------------
+add_executable(ditch_ransac_node src/ransac.cpp)
+ament_target_dependencies(ditch_ransac_node
+  rclcpp
+  sensor_msgs
+  pcl_conversions
+)
+target_link_libraries(ditch_ransac_node
   ${PCL_LIBRARIES}
   Eigen3::Eigen
 )
-add_definitions(${PCL_DEFINITIONS})
 
+# ---------------- Obstacle Logger ----------------
 add_executable(obstacle_presence_logger src/obstacle_presence_logger.cpp)
 ament_target_dependencies(obstacle_presence_logger
   rclcpp
   sensor_msgs
 )
 
+# ---------------- Install ----------------
 install(TARGETS
   shared_state
   planner_node
   relay_node
   imu_conversion_node
   motorcontroller
-  ditch_detector_node
+  wall_node              # <<< THIS WAS MISSING / WRONG BEFORE
+  inject_node
+  ditch_ransac_node
   obstacle_presence_logger
   DESTINATION lib/${PROJECT_NAME}
 )

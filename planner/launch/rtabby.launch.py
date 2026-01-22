@@ -46,7 +46,8 @@ def generate_launch_description():
                 'Grid/NormalK': '15',                         # Normal estimation neighbors
                 'Grid/MaxGroundAngle': '30',                 # Max ground slope
                 'Grid/GroundIsObstacle': 'true',             # Ground drop = obstacle
-                'Grid/MinGroundHeight': '-0.25',             # Min ground height
+                'Grid/MinGroundHeight': '-0.25',
+                'Grid/MinGroundHeight': '0.15',             # Min ground height
                 'Grid/MaxObstacleHeight': '2.0',             # Max obstacle height
 
                 'Grid/RangeMin': '0.0',                      # Min depth range

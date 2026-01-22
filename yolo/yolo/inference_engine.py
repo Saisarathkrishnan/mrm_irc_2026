@@ -14,7 +14,7 @@ import pycuda.autoinit
 from flask import Flask, Response
 import threading, time
 
-YOLO_CONF_THRESH = 0.10
+YOLO_CONF_THRESH = 0.50
 NMS_IOU_THRESH = 0.45
 ENGINE_PATH = "/home/mrmnavjet/IRC2026/ircWS/src/yolo/yolo/cone_v1.engine"
 
