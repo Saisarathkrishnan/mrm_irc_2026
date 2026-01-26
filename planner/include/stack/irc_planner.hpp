@@ -150,6 +150,12 @@ private:
     double bno_yaw;
     double current_orientation;
 
+    // --- Duplicate cone suppression ---
+Coordinates delivered_cone_location_;
+bool delivered_cone_valid_ = false;
+int delivered_cone_id_ = -1;
+
+
     std::vector<double> obj_follow_linear;
     std::vector<double> obj_follow_angular;
 

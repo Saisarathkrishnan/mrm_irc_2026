@@ -29,7 +29,7 @@ namespace planner
         stack_timer_(nullptr),
 
         CurrState(kManualState),
-        FollowPattern(kTurnA),
+        FollowPattern(kMoveForward),
         nav_mode(-1),
         target_cone_id_(0),
         nav_select_done_(false),
@@ -359,6 +359,8 @@ namespace planner
 
             delivery_requested_ = false;
             delivery_done_ = false;
+            delivered_cone_valid_ = false;
+            delivered_cone_id_ = -1;
 
             resetSearchPattern();
             search_skew = kNoSkew;
@@ -515,9 +517,10 @@ namespace planner
 
     void SensorCallback::coordinateFollowing()
     {
-        std::cout << "ywa waeaw" << std::endl;
+        std::cout << "yes yeyeye" << std::endl;
         if (!gps_goal_set)
         {
+            std::cout << "lmao" << std::endl;
             publishVel(geometry_msgs::msg::Twist()); // Zero vel gng
             return;
         }
@@ -572,7 +575,7 @@ namespace planner
         cmd.angular.z = 0;
         double angle_diff = abs(destAngle_local - currangle_coordF);
 
-        if (angle_diff < 8)
+        if (angle_diff < 10)
         {
             angleSetted = true;
         }
@@ -582,16 +585,15 @@ namespace planner
         }
 
         angle_diff = destAngle_local - currangle_coordF;
+        angle_diff = angle_diff - 360.0 * floor((angle_diff + 180.0) / 360.0);
 
-        while (angle_diff > 180.0)
-            angle_diff -= 360.0;
-        while (angle_diff < -180.0)
-            angle_diff += 360.0;
+        
+
         double speedx = 0;
         double anglex = 0;
         if (angleSetted)
         { 
-std::cout<<"angle setted "<<std::endl;	
+                std::cout<<"angle setted "<<std::endl;	
           
                 speedx = pow(dist, 3) / 10;
                 if (speedx < 0.3)
@@ -606,20 +608,35 @@ std::cout<<"angle setted "<<std::endl;
                 if (angle_diff > 0)
                 {
                     anglex = -abs(pow(dist, 3) / 100);
+                    if (abs(anglex) > 1.5)
+                    {
+                        anglex = -1.5;
+                    }
+                    if (abs(anglex) < 0.25)
+                    {
+                        anglex = -0.4;
+                    }
                 }
                 if (angle_diff < 0)
                 {
                     anglex = abs(pow(dist, 3) / 100);
-                }
 
-            
+                                    if (abs(anglex) > 1.5)
+                {
+                    anglex = 1.5;
+                }
+                if (abs(anglex) < 0.25)
+                {
+                    anglex = 0.4;
+                }
+                }            
         }
         else
         {
 
             if (angle_diff > 0)
             {
-		std::cout<<"angle not setted"<<std::endl;
+		        std::cout<<"angle not setted"<<std::endl;
                 // anglex=-abs(pow(dist,3)/100);
                 anglex = -abs(pow(dist, 3) / 100);
 
@@ -650,9 +667,8 @@ std::cout<<"angle setted "<<std::endl;
         cmd.linear.x = speedx;
         cmd.angular.z = anglex;
 
-        auto clock = this->get_clock();
         RCLCPP_INFO_THROTTLE(
-    get_logger(), *clock, 1000,
+    get_logger(),10, 1000,
     "[GPS][TRACK] dist=%.2f | heading angle=%.2f deg | angle=%.2f deg | lin=%.2f | ang=%.2f",
     dist, destAngle_local, currangle_coordF, cmd.linear.x, cmd.angular.z);
 
@@ -802,16 +818,17 @@ RCLCPP_INFO_THROTTLE(
 
         if (!search_ref_set_)
         {
-            FollowPattern = kTurnA;
+            FollowPattern = kMoveForward;
             search_end_time_ =
-                now + rclcpp::Duration::from_seconds(3.0);
+                now + rclcpp::Duration::from_seconds(search_forward_time_);
             search_ref_set_ = true;
 
             RCLCPP_INFO(
                 get_logger(),
-                "[SEARCH][INIT] L3 → R6 → L(3+skew) → FWD");
+                "[SEARCH][INIT] FWD → L3 → R6 → L(3+skew)");
             return;
         }
+
 
         if (FollowPattern == kTurnA)
         {
@@ -922,6 +939,20 @@ RCLCPP_INFO_THROTTLE(
         if (!delivery_done_)
             return;
 
+        if (nav_mode == 1)
+        {
+            delivered_cone_location_ = curr_location;
+            delivered_cone_valid_ = true;
+            delivered_cone_id_ = target_cone_id_;
+
+            RCLCPP_INFO(
+                this->get_logger(),
+                "[DELIVERY] Saved cone %d GPS lat=%.6f lon=%.6f",
+                delivered_cone_id_,
+                curr_location.latitude,
+                curr_location.longitude);
+        }
+    
         // exit autonomous cleanly
         RCLCPP_INFO(this->get_logger(), "[DELIVERY] delivered = TRUE → exiting autonomy");
         disableAutonomous();
@@ -1076,31 +1107,67 @@ RCLCPP_INFO_THROTTLE(
 }
 
 
-    // Checks if the goal has been reached or not
+    /*
     void SensorCallback::setGoalStatus()
     {
-        static int valid_count = 0;
-
-        if (nav_mode != 1 || CurrState != kConeFollowing || cone_goal_reached) return;
-
-        if (cone_detect && cone_x <= kDistanceThreshold) ++valid_count;
-        else valid_count = 0;
-
-        if (valid_count >= 5)
-        {
-            cone_goal_reached = true;
+        static int valid_count=0;
+        if(nav_mode!=1||CurrState!=kConeFollowing||cone_goal_reached) return;
+        if(cone_detect&&cone_x>=0.0f&&cone_x<=kDistanceThreshold) ++valid_count;
+        else valid_count=0;
+        if(valid_count>=5){
+            cone_goal_reached=true;
             RCLCPP_INFO(this->get_logger(),"Goal is reached - entering delivery state");
+        }
+    }*/
+
+void SensorCallback::setGoalStatus()
+{
+    static int valid_count = 0;
+
+    if (nav_mode != 1 ||
+        CurrState != kConeFollowing ||
+        cone_goal_reached ||
+        !cone_detect)
+        return;
+
+    // Ignore duplicate cone ONLY if same ID and within 3m
+    if (delivered_cone_valid_ &&
+        delivered_cone_id_ == target_cone_id_)
+    {
+        double d = haversine(curr_location, delivered_cone_location_);
+        if (d <= 3.0)
+        {
+            RCLCPP_WARN_THROTTLE(
+                this->get_logger(), *this->get_clock(), 2000,
+                "[CONE] Duplicate cone %d within %.2fm → SEARCH AGAIN",
+                delivered_cone_id_, d);
+
+            valid_count = 0;
+            cone_detect = false;
+            CurrState = kSearchPattern;
+            resetSearchPattern();
+            return;
         }
     }
 
-   /*/ void SensorCallback::setGoalStatus()
+    if (cone_x >= 0.0f &&
+        cone_x <= kDistanceThreshold)
     {
-        if (nav_mode != 1 || !cone_detect || CurrState != kConeFollowing || cone_goal_reached) return;
-        if (cone_x > 2.0) return;
+        ++valid_count;
+    }
+    else
+    {
+        valid_count = 0;
+    }
 
+    if (valid_count >= 5)
+    {
         cone_goal_reached = true;
-        RCLCPP_INFO(this->get_logger(),"Goal is reached - entering delivery state");
-    } */
+        RCLCPP_INFO(
+            this->get_logger(),
+            "[CONE] Goal reached → entering delivery state");
+    }
+}
 
 
     void SensorCallback::setSearchSkew(int skew)
@@ -1115,11 +1182,12 @@ RCLCPP_INFO_THROTTLE(
 
     void SensorCallback::resetSearchPattern()
     {
-        FollowPattern = kTurnA;
+        FollowPattern = kMoveForward;
         search_ref_set_ = false;
         spot_done_ = false;
         search_cycle_ = 0;
     }
+
 
     // Math Functions :
 

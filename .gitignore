@@ -1,1 +1,6 @@
 .vscode/
+.onnx
+.engine
+
+yolo/yolo/cone_final.engine
+yolo/yolo/cone_final.onnx

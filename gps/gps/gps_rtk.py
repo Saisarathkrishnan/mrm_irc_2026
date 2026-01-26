@@ -1,87 +1,52 @@
-#!/usr/bin/env python3
-
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import NavSatFix, NavSatStatus
-from serial import Serial, SerialException
-from pyubx2 import UBXReader
-import sys
-import threading
+import serial
+import pynmea2
 
-FIX_MAP = {
-    0: "NO FIX",
-    1: "DEAD RECKONING",
-    2: "2D FIX",
-    3: "3D FIX",
-    4: "GNSS + DR",
-    5: "TIME ONLY"
-}
-
-class UbxParserNode(Node):
+class GPSNode(Node):
     def __init__(self):
-        super().__init__('gps')
+        super().__init__('gps_node')
 
-        self.declare_parameter('serial_port', '/dev/ttyACM0')
-        self.declare_parameter('baud_rate', 38400)
-        self.declare_parameter('topic_name', '/fix')
+        self.publisher = self.create_publisher(NavSatFix, '/fix', 10)
 
-        serial_port = self.get_parameter('serial_port').value
-        baud_rate = self.get_parameter('baud_rate').value
-        topic_name = self.get_parameter('topic_name').value
+        # Change this to your GPS port
+        self.serial_port = serial.Serial('/dev/ttyACM1', 9600, timeout=1)
 
-        try:
-            self.stream = Serial(serial_port, baud_rate, timeout=1)
-            self.get_logger().info(f"Connected to GPS on {serial_port}")
-        except SerialException as e:
-            self.get_logger().fatal(f"GPS serial open failed: {e}")
-            sys.exit(1)
+        self.timer = self.create_timer(0.2, self.read_gps)
 
-        self.gps_pub = self.create_publisher(NavSatFix, topic_name, 10)
+    def read_gps(self):
+        line = self.serial_port.readline().decode('ascii', errors='replace')
 
-        self.reader_thread = threading.Thread(
-            target=self.read_and_publish_loop,
-            daemon=True
-        )
-        self.reader_thread.start()
-
-    def read_and_publish_loop(self):
-        ubr = UBXReader(self.stream)
-        while rclpy.ok():
+        if line.startswith('$GPGGA') or line.startswith('$GNGGA'):
             try:
-                _, msg = ubr.read()
-                if msg is None or msg.identity != "NAV-PVT":
-                    continue
+                msg = pynmea2.parse(line)
 
-                lat = msg.lat / 1e7
-                lon = msg.lon / 1e7
-                alt = msg.hMSL / 1000.0
-                fix_type = msg.fixType
-                fix_str = FIX_MAP.get(fix_type, "UNKNOWN")
+                fix = NavSatFix()
+                fix.header.stamp = self.get_clock().now().to_msg()
+                fix.header.frame_id = "gps_link"
 
-                navsat = NavSatFix()
-                navsat.header.stamp = self.get_clock().now().to_msg()
-                navsat.header.frame_id = 'base_link'
+                fix.status.status = NavSatStatus.STATUS_FIX
+                fix.status.service = NavSatStatus.SERVICE_GPS
 
-                navsat.latitude = lat
-                navsat.longitude = lon
-                navsat.altitude = alt
+                fix.latitude = msg.latitude
+                fix.longitude = msg.longitude
+                fix.altitude = float(msg.altitude)
 
-                navsat.status.status = NavSatStatus.STATUS_FIX if fix_type >= 2 else NavSatStatus.STATUS_NO_FIX
-                navsat.status.service = NavSatStatus.SERVICE_GPS
-                navsat.position_covariance_type = NavSatFix.COVARIANCE_TYPE_UNKNOWN
+                fix.position_covariance_type = NavSatFix.COVARIANCE_TYPE_UNKNOWN
 
-                self.gps_pub.publish(navsat)
+                self.publisher.publish(fix)
 
                 self.get_logger().info(
-                    f"Lat: {lat:.7f}, Lon: {lon:.7f}, Alt: {alt:.2f} m | Fix: {fix_str}"
+                    f"Published: lat={fix.latitude}, lon={fix.longitude}, alt={fix.altitude}"
                 )
 
             except Exception as e:
-                self.get_logger().error(f"GPS read error: {e}")
+                self.get_logger().warn(f"GPS parse error: {e}")
 
-def main(args=None):
-    rclpy.init(args=args)
-    node = UbxParserNode()
+def main():
+    rclpy.init()
+    node = GPSNode()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()

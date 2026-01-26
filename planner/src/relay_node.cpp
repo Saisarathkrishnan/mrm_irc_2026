@@ -71,7 +71,7 @@ private:
         if (!autonomous_mode_.load()) return;
 
         float linear_vel = msg->linear.x * 1.2f;
-        float angular_vel = -msg->angular.z * 1.2f;
+        float angular_vel = -msg->angular.z * 1.2f*2;
 
         float max_linear_velocity =
             (static_cast<float>(M_PI) * wheel_diameter * max_wheel_RPM) / 60.0f;
@@ -125,7 +125,7 @@ private:
         last_arm_packet_ =
             "T" + std::to_string((int)msg->link1) +
             "U" + std::to_string((int)msg->link2) +
-            "G0";
+            "G" + std::to_string((int)msg->gripper);
     }
 
     void modeCmdCallback(const std_msgs::msg::Bool::SharedPtr msg) {
