@@ -1,4 +1,3 @@
-
 #include "stack/irc_planner.hpp"
 
 #include <algorithm>
@@ -34,31 +33,24 @@ namespace planner
         nav_mode(-1),
         target_cone_id_(0),
         nav_select_done_(false),
-
         rover_state(false),
         last_rover_state(false),
-
         gps_goal_set(false),
         gps_goal_reached(false),
         gps_aligned_(false),
         curr_location{0.0, 0.0},
         goal_location{0.0, 0.0},
-
         cone_detect(false),
         cone_goal_reached(false),
         cone_x(0.0),
         cone_y(0.0),
-
         obstacle_detect(false),
         obs_x(0.0),
         obs_y(0.0),
-
-        /* ---- ORDER FIX STARTS HERE ---- */
         search_ref_set_(false),
-        avoiding_obstacle_(false),
-        /* ---- ORDER FIX ENDS HERE ---- */
-
+        
         spot_turn_back_(false),
+        avoiding_obstacle_(false),
         spot_done_(false),
         search_cycle_(0),
         search_end_time_(this->now()),
@@ -76,7 +68,7 @@ namespace planner
         declare_parameter("imu_topic", "/imu_data");
         declare_parameter("gps_topic", "/fix");
         declare_parameter("cone_topic", "/marker_detect");
-        declare_parameter("point_cloud_topic", "/local_grid_obstacle");
+        declare_parameter("point_cloud_topic", "/local_grid_safe");
         declare_parameter("cmd_vel_topic", "/cmd_vel");
         declare_parameter("state_topic", "/autonomous_mode_state");
         declare_parameter("target_cone_id", 1);
@@ -136,7 +128,6 @@ namespace planner
 {
     std::lock_guard<std::mutex> lock(state_mutex_);
 
-    obstacleClassifier();
     current_orientation = zed_yaw;
     auto now = this->get_clock()->now();
 
@@ -278,7 +269,6 @@ namespace planner
         }
     }
 
-
     // Callbacks:-
 
     void SensorCallback::imuCallback(const custom_msgs::msg::ImuData::SharedPtr msg)
@@ -305,79 +295,23 @@ namespace planner
         last_gps_time_ = this->get_clock()->now();
     }
 
-
     void SensorCallback::pclCallback(
         const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
-        if (!rover_state)
-            return;
+        if (!rover_state) return;
 
         std::lock_guard<std::mutex> lock(state_mutex_);
+
         last_obstacle_cloud_ = msg;
         last_cloud_time_ = this->now();
+        att_latest_pcl = msg;
 
         obstacleDataType1.clear();
-        att_latest_pcl = msg;
-        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-        pcl::fromROSMsg(*msg, *cloud);
-        pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
-        tree->setInputCloud(cloud);
 
-        std::vector<pcl::PointIndices> cluster_indices;
-        pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-        ec.setClusterTolerance(0.5); // meters between points to be in the same cluster
-        ec.setMinClusterSize(5);
-        ec.setMaxClusterSize(25000);
-        ec.setSearchMethod(tree);
-        ec.setInputCloud(cloud);
-        ec.extract(cluster_indices);
+        obstacleClassifier();
 
-        //RCLCPP_INFO(this->get_logger(), "Found %zu clusters", cluster_indices.size());
-        if (cluster_indices.size())
-        {
-            obstacleIs = true;
-        }
-        else
-        {
-            obstacleIs = false;
-        }
-
-        int cluster_id = 0;
-        for (const auto &indices : cluster_indices)
-        {
-            double sum_x = 0, sum_y = 0, sum_z = 0;
-            for (int idx : indices.indices)
-            {
-                sum_x += cloud->points[idx].x;
-                sum_y += cloud->points[idx].y;
-                sum_z += cloud->points[idx].z;
-            }
-            double cx = sum_x / indices.indices.size();
-            double cy = sum_y / indices.indices.size();
-            double cz = sum_z / indices.indices.size();
-
-            // Distance
-            double pcl_distance = sqrt(cx * cx + cy * cy + cz * cz);
-
-            // Yaw (left/right)
-            double yaw_rad = atan2(cy, cx);
-            double yaw_deg = yaw_rad * 180.0 / M_PI;
-
-            // Pitch (up/down)
-            double pitch_rad = atan2(cz, sqrt(cx * cx + cy * cy));
-            double pitch_deg = pitch_rad * 180.0 / M_PI;
-
-            // Full 3D angle
-            double dot = cx / pcl_distance; // forward vector (1,0,0) dot target normalized
-            double theta_3D = acos(dot) * 180.0 / M_PI;
-
-            std::vector<double> l1;
-            l1.push_back(pcl_distance);
-
-            l1.push_back(theta_3D - 90);
-            obstacleDataType1.push_back(l1);
-        }
-    } 
+        obstacleIs = obstacle_detect;
+    }
 
     void SensorCallback::coneCallback(const custom_msgs::msg::MarkerTag::SharedPtr cone)
     {
@@ -716,62 +650,26 @@ std::cout<<"angle setted "<<std::endl;
         cmd.linear.x = speedx;
         cmd.angular.z = anglex;
 
+        auto clock = this->get_clock();
         RCLCPP_INFO_THROTTLE(
-            this->get_logger(), *this->get_clock(), 1000,
-            "[GPS][TRACK] dist=%.2f | heading angle=%.2f deg | angle=%.2f deg | lin=%.2f | ang=%.2f",
-            dist, destAngle_local, currangle_coordF, cmd.linear.x, cmd.angular.z);
+    get_logger(), *clock, 1000,
+    "[GPS][TRACK] dist=%.2f | heading angle=%.2f deg | angle=%.2f deg | lin=%.2f | ang=%.2f",
+    dist, destAngle_local, currangle_coordF, cmd.linear.x, cmd.angular.z);
+
+
+
 
         publishVel(cmd);
     }
 
-    // Function for obstacle avoidance
-
-    /*void SensorCallback::obstacleAvoidance()
-{
-    constexpr double STOP_DIST  = 1.5;
-    constexpr double CLEAR_DIST = 2.2;
-
-    if (!obstacle_detect || obs_x > CLEAR_DIST)
-    {
-        avoiding_obstacle_ = false;
-
-        if (prev_state_ == kConeFollowing && !cone_detect)
-            CurrState = kSearchPattern;
-        else
-            CurrState = prev_state_;
-
-        FollowPattern = prev_search_pattern_;
-
-        RCLCPP_INFO(
-            get_logger(),
-            "[OBS] Cleared → resume state=%d", CurrState);
-
-        return;
-    }
-
-    avoiding_obstacle_ = true;
-
-    geometry_msgs::msg::Twist cmd;
-
-    cmd.linear.x  = (obs_x < STOP_DIST) ? 0.0 : 0.25;
-    cmd.angular.z = (obs_y >= 0.0 ? -1.0 : 1.0) * 0.8;
-
-    RCLCPP_INFO_THROTTLE(
-        get_logger(), *get_clock(), 300,
-        "[OBS][AVOID] x=%.2f y=%.2f lin=%.2f ang=%.2f",
-        obs_x, obs_y, cmd.linear.x, cmd.angular.z);
-
-    publishVel(cmd);
-}*/
-
+  
 void SensorCallback::obstacleAvoidance()
 {
     constexpr double CLEAR_DIST_EXIT = 2.8;
-    constexpr double CLEAR_TIME      = 0.6;
+    constexpr double CLEAR_TIME      = 0.5;
 
     auto now = this->get_clock()->now();
 
-    // Obstacle present → rotate in place ONLY
     if (obstacle_detect && obs_x <= CLEAR_DIST_EXIT)
     {
         obstacle_clear_timing_ = false;
@@ -780,16 +678,16 @@ void SensorCallback::obstacleAvoidance()
         cmd.linear.x  = 0.0;
         cmd.angular.z = (obs_y >= 0.0 ? -1.0 : 1.0) * 0.8;
 
-        RCLCPP_WARN_THROTTLE(
-            get_logger(), *get_clock(), 300,
-            "[OBS][AVOID] ROTATE_ONLY x=%.2f y=%.2f ang=%.2f",
-            obs_x, obs_y, cmd.angular.z);
+        RCLCPP_WARN(
+    get_logger(),
+    "[OBS][AVOID] ROTATE_ONLY x=%.2f y=%.2f ang=%.2f",
+    obs_x, obs_y, cmd.angular.z);
+
 
         publishVel(cmd);
         return;
     }
 
-    // Start clearance timing
     if (!obstacle_clear_timing_)
     {
         obstacle_clear_since_  = now;
@@ -798,34 +696,31 @@ void SensorCallback::obstacleAvoidance()
         return;
     }
 
-    // Require continuous clear duration
     if ((now - obstacle_clear_since_).seconds() < CLEAR_TIME)
     {
         publishVel(geometry_msgs::msg::Twist());
         return;
     }
 
-    // Fully safe → exit avoidance
     obstacle_clear_timing_ = false;
     avoiding_obstacle_     = false;
 
-    if (prev_state_ == kConeFollowing && !cone_detect)
+        if (prev_state_ == kConeFollowing && !cone_detect)
+    {
         CurrState = kSearchPattern;
+        resetSearchPattern();          
+    }
+    else if (prev_state_ == kSearchPattern)
+    {
+        CurrState = kSearchPattern;
+        resetSearchPattern();          
+    }
     else
+    {
         CurrState = prev_state_;
+    }
 
-    FollowPattern = prev_search_pattern_;
-
-    RCLCPP_INFO(
-        get_logger(),
-        "[OBS] Cleared (%.2fs, %.2fm) → resume state=%d",
-        CLEAR_TIME, CLEAR_DIST_EXIT, CurrState);
 }
-
-
-
-    // Follows the detected cone using its relative position.
-
 	  void SensorCallback::objectFollowing()
 {
     if (!cone_detect)
@@ -840,7 +735,6 @@ void SensorCallback::obstacleAvoidance()
     constexpr double k_lin = 0.6;
     constexpr double y_deadband = 0.06;
     constexpr double max_ang = 0.7;
-    constexpr double min_lin = 0.4;
 
     double ang_err = cone_y;
     if (std::abs(ang_err) < y_deadband)
@@ -852,23 +746,32 @@ void SensorCallback::obstacleAvoidance()
     double heading_scale =
         1.0 - std::min(std::abs(cmd.angular.z) / max_ang, 0.7);
 
-    cmd.linear.x =
-        std::clamp(lin * heading_scale, min_lin, kMaxLinearVel);
-	RCLCPP_INFO_THROTTLE(
-    get_logger(), *get_clock(), 300,
+    if (cone_x <= kDistanceThreshold)
+    {
+        cmd.linear.x = 0.0;
+    }
+    else
+    {
+        cmd.linear.x =
+            std::clamp(lin * heading_scale, 0.0, kMaxLinearVel);
+    }
+    auto clock = this->get_clock();
+RCLCPP_INFO_THROTTLE(
+    get_logger(), *clock, 300,
     "[CONE][FOLLOW] x=%.2f y=%.2f lin=%.2f ang=%.2f",
-    cone_x, cone_y, cmd.linear.x, cmd.angular.z
-);
+    cone_x, cone_y, cmd.linear.x, cmd.angular.z);
+
+
 
     publishVel(cmd);
 }
 
-
-    // Controls how the rover searches when no cone is visible.
     void SensorCallback::callSearchPattern()
     {
         geometry_msgs::msg::Twist cmd;
-        auto now = this->get_clock()->now();
+        auto clock = this->get_clock();
+        auto now = clock->now();
+
 
         const double ang_vel = 1.0;
         const double lin_vel = 0.9;
@@ -882,7 +785,7 @@ void SensorCallback::obstacleAvoidance()
             publishVel(cmd);
 
             RCLCPP_INFO_THROTTLE(
-                get_logger(), *get_clock(), 1000,
+                get_logger(), *clock, 1000,
                 "[SEARCH][SPOT] Turning in place | ang=%.2f", cmd.angular.z);
 
             if (now >= search_end_time_)
@@ -917,7 +820,7 @@ void SensorCallback::obstacleAvoidance()
             publishVel(cmd);
 
             RCLCPP_INFO_THROTTLE(
-                get_logger(), *get_clock(), 1000,
+                get_logger(), *clock, 1000,
                 "[SEARCH][TURN A] ang=%.2f skew=%d cycle=%d",
                 cmd.angular.z, search_skew, search_cycle_);
 
@@ -937,7 +840,7 @@ void SensorCallback::obstacleAvoidance()
             publishVel(cmd);
 
             RCLCPP_INFO_THROTTLE(
-                get_logger(), *get_clock(), 1000,
+                get_logger(), *clock, 1000,
                 "[SEARCH][TURN B] ang=%.2f skew=%d cycle=%d",
                 cmd.angular.z, search_skew, search_cycle_);
 
@@ -962,7 +865,7 @@ void SensorCallback::obstacleAvoidance()
             publishVel(cmd);
 
             RCLCPP_INFO_THROTTLE(
-                get_logger(), *get_clock(), 1000,
+                get_logger(), *clock, 1000,
                 "[SEARCH][TURN C] ang=%.2f skew=%d cycle=%d",
                 cmd.angular.z, search_skew, search_cycle_);
 
@@ -981,7 +884,7 @@ void SensorCallback::obstacleAvoidance()
             publishVel(cmd);
 
             RCLCPP_INFO_THROTTLE(
-                get_logger(), *get_clock(), 1000,
+                get_logger(), *clock, 1000,
                 "[SEARCH][FORWARD] lin=%.2f cycle=%d skew=%d",
                 cmd.linear.x, search_cycle_, search_skew);
 
@@ -1043,7 +946,8 @@ void SensorCallback::obstacleAvoidance()
         delivery_done_ = false;
 
         last_cone_time_ = this->get_clock()->now();
-        last_gps_time_ = this->get_clock()->now();
+        last_gps_time_  = this->get_clock()->now();
+
     }
 
     // Helpers :
@@ -1106,6 +1010,8 @@ void SensorCallback::obstacleAvoidance()
 
     void SensorCallback::obstacleClassifier()
 {
+    auto clock = this->get_clock();   // ✅ ADD HERE
+
     if (!last_obstacle_cloud_) {
         obstacle_detect = false;
         return;
@@ -1131,12 +1037,6 @@ void SensorCallback::obstacleAvoidance()
         if (px < min_x || px > max_x) continue;
         if (std::abs(py) > half_w) continue;
 
-        if (cone_detect) {
-            const float dx = px - cone_x;
-            const float dy = py - cone_y;
-            if (dx * dx + dy * dy < cone_r2) continue;
-        }
-
         if (px < best_x) {
             best_x = px;
             x = px;
@@ -1149,6 +1049,17 @@ void SensorCallback::obstacleAvoidance()
     obs_x = x;
     obs_y = y;
 
+    if (obstacle_detect && cone_detect)
+    {
+        const float dx = obs_x - cone_x;
+        const float dy = obs_y - cone_y;
+
+        if (dx * dx + dy * dy < cone_r2) {
+            obstacle_detect = false;
+            return;
+        }
+    }
+
     if (obstacle_detect)
     {
         const float dist = std::hypot(obs_x, obs_y);
@@ -1158,10 +1069,9 @@ void SensorCallback::obstacleAvoidance()
                                "center";
 
         RCLCPP_INFO_THROTTLE(
-            get_logger(), *get_clock(), 300,
+            get_logger(), *clock, 300,
             "[OBS] Obstacle detected | x=%.2f y=%.2f dist=%.2f side=%s",
-            obs_x, obs_y, dist, side
-        );
+            obs_x, obs_y, dist, side);
     }
 }
 
@@ -1169,38 +1079,29 @@ void SensorCallback::obstacleAvoidance()
     // Checks if the goal has been reached or not
     void SensorCallback::setGoalStatus()
     {
-        static rclcpp::Time close_since = this->get_clock()->now();
-        static bool timing_active = false;
+        static int valid_count = 0;
 
-        if (nav_mode != 1 || !cone_detect || CurrState != kConeFollowing || cone_goal_reached)
-        {
-            timing_active = false;
-            return;
-        }
+        if (nav_mode != 1 || CurrState != kConeFollowing || cone_goal_reached) return;
 
-        // Cone must be continuously close AND visible
-        if (cone_x <= kDistanceThreshold)
-        {
-            if (!timing_active)
-            {
-                close_since = this->get_clock()->now();
-                timing_active = true;
-            }
+        if (cone_detect && cone_x <= kDistanceThreshold) ++valid_count;
+        else valid_count = 0;
 
-            // Require continuous visibility inside threshold
-            if ((this->get_clock()->now() - close_since).seconds() > 0.8)
-            {
-                cone_goal_reached = true;
-                RCLCPP_INFO(this->get_logger(),
-                            "Goal is reached - entering delivery state");
-            }
-        }
-        else
+        if (valid_count >= 5)
         {
-            // If cone moves away, reset timer
-            timing_active = false;
+            cone_goal_reached = true;
+            RCLCPP_INFO(this->get_logger(),"Goal is reached - entering delivery state");
         }
     }
+
+   /*/ void SensorCallback::setGoalStatus()
+    {
+        if (nav_mode != 1 || !cone_detect || CurrState != kConeFollowing || cone_goal_reached) return;
+        if (cone_x > 2.0) return;
+
+        cone_goal_reached = true;
+        RCLCPP_INFO(this->get_logger(),"Goal is reached - entering delivery state");
+    } */
+
 
     void SensorCallback::setSearchSkew(int skew)
     {

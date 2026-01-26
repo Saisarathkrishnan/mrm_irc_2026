@@ -10,7 +10,11 @@ import time
 import pickle
 import os
 import serial
-
+def safe_float(val, default=None):
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
 
 class BNO055Node(Node):
     def __init__(self):
@@ -56,7 +60,13 @@ class BNO055Node(Node):
 #        self.timer_ = self.create_timer(0.01, self.send)
 
     def initialize_imu(self):
-        self.serial_port = serial.Serial('/dev/ttyUSB0', 115200)
+        #self.serial_port = serial.Serial('/dev/ttyUSB0', 115200)
+        self.serial_port = serial.Serial(
+    '/dev/ttyUSB0',
+    115200,
+    timeout=0.001   # NON-BLOCKING
+)
+
         time.sleep(1)
         if(self.serial_port):
             print("into the serial port1 saf asf")
@@ -104,82 +114,55 @@ class BNO055Node(Node):
         except socket.error as e:
             print("Send error:", e)
 
+
+
+
     def publish_imu(self):
-        print("hi")
-        self.line = self.serial_port.readline().decode('utf-8', errors='ignore').strip()
-        x=self.line
-        if(len(self.line)!=0):
-            print(self.line)
+        try:
+            
+            line = self.serial_port.readline().decode('utf-8', errors='ignore').strip()
+            if not line:
+                return
 
-        if(len(self.line)!=0 and str(self.line[0])=="y"):
-            print(self.line)
+            if not line.startswith("yl1"):
+                print(line)
+                return
 
-            y=type(self.line)
-            z=x.split('_')
-            self.l1["r"]=float(z[2])
-            self.l1["p"]=-float(z[3])
-            self.l1["y"]=float(z[1])
+            z = line.split('_')
+            if len(z) != 12:
+                print("Malformed IMU packet:", line)
+                return
 
-            self.l2["r"]=float(z[6])
-            self.l2["p"]=float(z[7])
-            self.l2["y"]=float(z[5])
+            # Link 1
+            self.l1["y"] = safe_float(z[1])
+            self.l1["r"] = safe_float(z[2])
+            self.l1["p"] = (-safe_float(z[3])) % 360
 
-            imuD=ImuData()
-            self.rvYaw=float(z[9])
-            self.rvRoll=float(z[10])
-            self.rvPitch=float(z[11])
-            imuD.orientation.z=self.rvYaw
-            imuD.orientation.x=self.rvRoll
-            imuD.orientation.y=self.rvPitch
+            # Link 2
+            self.l2["y"] = safe_float(z[5])
+            self.l2["r"] = safe_float(z[6])
+            self.l2["p"] = safe_float(z[7]) % 360
+
+            # Rotation Vector (Euler from ESP)
+            self.rvYaw   = safe_float(z[9])
+            self.rvRoll  = safe_float(z[10])
+            self.rvPitch = safe_float(z[11])
+
+            imuD = ImuData()
+            imuD.orientation.z = self.rvYaw
+            imuD.orientation.x = self.rvRoll
+            imuD.orientation.y = self.rvPitch
+            print(
+    f"L1 [Y:{self.l1['y']:.2f} R:{self.l1['r']:.2f} P:{self.l1['p']:.2f}] | "
+    f"L2 [Y:{self.l2['y']:.2f} R:{self.l2['r']:.2f} P:{self.l2['p']:.2f}] | "
+    f"RV [Yaw:{self.rvYaw:.2f} Pitch:{self.rvPitch:.2f} Roll:{self.rvRoll:.2f}]"
+)
+
             self.imu_pub_.publish(imuD)
-            self.l1["p"]=self.l1["p"] % 360
-            self.l2["p"]=self.l2["p"] % 360
 
-            print("l1->",self.l1['p'],"___l2->",self.l2['p'])
-            
-            
-            if(self.deliveryNow):
-                link1Diff=self.toAnglel1-self.l1["p"]
-                link2Diff=self.toAnglel2-self.l2["p"]
+        except Exception as e:
+            print("IMU parse error:", e)
 
-                if(abs(link1Diff)<2 and abs(link2Diff)<2):
-                    self.deliveryNow=False
-                    msgggg=Bool()
-                    msgggg.data=True
-                    self.delivered_pub_.publish(msgggg)
-                    return
-                6
-                if(abs(link1Diff) > 2):
-                    if(link1Diff>0):
-                        #print("link1 diff 1" ,link1Diff)
-                        self.link1Pwm= -1
-                    if(link1Diff<0):
-                        #print("link1 diff -1" ,link1Diff)
-                        self.link1Pwm= 1 
-                else:
-                    self.link1Pwm=0
-                
-                if(abs(link2Diff) > 2):
-                    if(link2Diff>0):
-                        self.link2Pwm=-1
-                    if(link2Diff<0):
-                        self.link2Pwm=1 
-                else:
-                    self.link2Pwm=0
-                    self.link2Pwm=0
-                
-
-                result=self.msgR
-                rm_values=ArmPwm()
-                print("llll",self.link1Pwm,self.link2Pwm)
-                rm_values.link1=self.link1Pwm
-                rm_values.link2=self.link2Pwm
-
-                self.armPwm_.publish(rm_values)
-                
-                #rm_values.gripper=self.link2Pwm
-            else:
-                self.armPwm_.publish(ArmPwm())
 
             
             #result=self.msgR.replace("T0","T"+str(self.link1Pwm))
@@ -193,9 +176,6 @@ class BNO055Node(Node):
             #self.msg=result
 #
             #self.send()
-
-
-
 
 
             
@@ -226,7 +206,9 @@ class BNO055Node(Node):
 
             # Publish
             self.imu_pub_.publish(imu_msg_)
-'''
+'''     
+            
+
 
 
 def main(args=None):

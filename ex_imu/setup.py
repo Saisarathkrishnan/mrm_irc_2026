@@ -27,6 +27,7 @@ setup(
             'ex_imu=ex_imu.imu_node:main',
             'rm_auto=ex_imu.imu_node_rm:main',
             'ex_imu_quat=ex_imu.imu_quat:main',
+		'rm_auto_em=ex_imu.deliver:main',
         ],
     },
 )

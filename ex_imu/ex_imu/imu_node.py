@@ -19,7 +19,7 @@ class BNO055Node(Node):
         self.yaw=0.0
         self.line="123"
         
-        self.imu_pub_ = self.create_publisher(ImuData, '/imu_data', 10)
+        self.imu_pub_ = self.create_publisher(ImuData, '/external_imu', 10)
 
         self.initialize_imu()
 

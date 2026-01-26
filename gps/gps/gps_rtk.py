@@ -2,74 +2,89 @@
 
 import rclpy
 from rclpy.node import Node
-import serial
-import pynmea2
-
 from sensor_msgs.msg import NavSatFix, NavSatStatus
+from serial import Serial, SerialException
+from pyubx2 import UBXReader
+import sys
+import threading
 
+FIX_MAP = {
+    0: "NO FIX",
+    1: "DEAD RECKONING",
+    2: "2D FIX",
+    3: "3D FIX",
+    4: "GNSS + DR",
+    5: "TIME ONLY"
+}
 
-class GPSNode(Node):
+class UbxParserNode(Node):
     def __init__(self):
-        super().__init__("gps_node")
+        super().__init__('gps')
 
-        # Parameters
-        self.declare_parameter("port", "/dev/ttyACM0")
-        self.declare_parameter("baud", 9600)
-        self.declare_parameter("frame_id", "gps")
+        self.declare_parameter('serial_port', '/dev/ttyACM0')
+        self.declare_parameter('baud_rate', 38400)
+        self.declare_parameter('topic_name', '/fix')
 
-        port = self.get_parameter("port").value
-        baud = self.get_parameter("baud").value
-        self.frame_id = self.get_parameter("frame_id").value
+        serial_port = self.get_parameter('serial_port').value
+        baud_rate = self.get_parameter('baud_rate').value
+        topic_name = self.get_parameter('topic_name').value
 
-        # Publisher
-        self.pub = self.create_publisher(NavSatFix, "/fix", 10)
-
-        # Serial
-        self.ser = serial.Serial(port, baud, timeout=1)
-
-        # Timer
-        self.timer = self.create_timer(0.1, self.read_gps)
-
-        self.get_logger().info(f"GPS started on {port} @ {baud} baud")
-
-    def read_gps(self):
         try:
-            line = self.ser.readline().decode("ascii", errors="ignore").strip()
+            self.stream = Serial(serial_port, baud_rate, timeout=1)
+            self.get_logger().info(f"Connected to GPS on {serial_port}")
+        except SerialException as e:
+            self.get_logger().fatal(f"GPS serial open failed: {e}")
+            sys.exit(1)
 
-            if not line.startswith("$"):
-                return
+        self.gps_pub = self.create_publisher(NavSatFix, topic_name, 10)
 
-            msg = pynmea2.parse(line)
+        self.reader_thread = threading.Thread(
+            target=self.read_and_publish_loop,
+            daemon=True
+        )
+        self.reader_thread.start()
 
-            if isinstance(msg, pynmea2.types.talker.GGA):
-                fix = NavSatFix()
-                fix.header.stamp = self.get_clock().now().to_msg()
-                fix.header.frame_id = self.frame_id
+    def read_and_publish_loop(self):
+        ubr = UBXReader(self.stream)
+        while rclpy.ok():
+            try:
+                _, msg = ubr.read()
+                if msg is None or msg.identity != "NAV-PVT":
+                    continue
 
-                fix.latitude = msg.latitude
-                fix.longitude = msg.longitude
-                fix.altitude = msg.altitude if msg.altitude else 0.0
+                lat = msg.lat / 1e7
+                lon = msg.lon / 1e7
+                alt = msg.hMSL / 1000.0
+                fix_type = msg.fixType
+                fix_str = FIX_MAP.get(fix_type, "UNKNOWN")
 
-                fix.status.status = (
-                    NavSatStatus.STATUS_FIX
-                    if int(msg.gps_qual) > 0
-                    else NavSatStatus.STATUS_NO_FIX
+                navsat = NavSatFix()
+                navsat.header.stamp = self.get_clock().now().to_msg()
+                navsat.header.frame_id = 'base_link'
+
+                navsat.latitude = lat
+                navsat.longitude = lon
+                navsat.altitude = alt
+
+                navsat.status.status = NavSatStatus.STATUS_FIX if fix_type >= 2 else NavSatStatus.STATUS_NO_FIX
+                navsat.status.service = NavSatStatus.SERVICE_GPS
+                navsat.position_covariance_type = NavSatFix.COVARIANCE_TYPE_UNKNOWN
+
+                self.gps_pub.publish(navsat)
+
+                self.get_logger().info(
+                    f"Lat: {lat:.7f}, Lon: {lon:.7f}, Alt: {alt:.2f} m | Fix: {fix_str}"
                 )
-                fix.status.service = NavSatStatus.SERVICE_GPS
 
-                self.pub.publish(fix)
+            except Exception as e:
+                self.get_logger().error(f"GPS read error: {e}")
 
-        except Exception:
-            pass
-
-
-def main():
-    rclpy.init()
-    node = GPSNode()
+def main(args=None):
+    rclpy.init(args=args)
+    node = UbxParserNode()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

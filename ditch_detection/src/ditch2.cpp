@@ -13,231 +13,206 @@
 
 #include <vector>
 #include <cmath>
-#include <limits>
+#include <algorithm>
 
-class GapBasedDitchDetector : public rclcpp::Node
+class DitchDetectorFinal : public rclcpp::Node
 {
 public:
-    GapBasedDitchDetector()
-    : Node("gap_based_ditch_detector"),
+    DitchDetectorFinal()
+    : Node("ditch_detector_final"),
       tf_buffer_(get_clock()),
       tf_listener_(tf_buffer_)
     {
         cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
             "/zed/zed_node/point_cloud/cloud_registered",
             rclcpp::SensorDataQoS(),
-            std::bind(&GapBasedDitchDetector::cloudCallback, this, std::placeholders::_1));
+            std::bind(&DitchDetectorFinal::cloudCb, this, std::placeholders::_1));
+
+        local_grid_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+            "/local_grid_obstacle",
+            rclcpp::SensorDataQoS(),
+            std::bind(&DitchDetectorFinal::gridCb, this, std::placeholders::_1));
 
         wall_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/fake_wall_cloud", 10);
+        safe_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/local_grid_safe", 10);
         ditch_pub_ = create_publisher<std_msgs::msg::Bool>("/ditch_detected", 10);
         ditch_dist_pub_ = create_publisher<std_msgs::msg::Float32>("/ditch_distance", 10);
 
         declare_parameter("target_frame", "base_link");
-
         declare_parameter("xmin", 0.6);
-        declare_parameter("xmax", 3.5);
-        declare_parameter("bin_size", 0.2);
+        declare_parameter("xmax", 3.0);
+        declare_parameter("bin_size", 0.15);
         declare_parameter("corridor_width", 1.6);
-
-        declare_parameter("z_flatness_tol", 0.25);
-        declare_parameter("ditch_depth", 0.12);
-        declare_parameter("min_gap_length_m", 0.4);
-
-        declare_parameter("temporal_confirm_frames", 2);
-        declare_parameter("wall_height", 0.6);
-
-        RCLCPP_INFO(get_logger(),
-            "Gap-based ditch detector (RELAXED / REAL-WORLD) started");
+        declare_parameter("min_points", 8);
+        declare_parameter("gap_bins", 2);
+        declare_parameter("ditch_depth", 0.30);
+        declare_parameter("wall_height", 0.8);
+        declare_parameter("ground_z", -0.4);
     }
 
 private:
-    struct BinStats
-    {
-        int count = 0;
-        double min_z = std::numeric_limits<double>::max();
-        double max_z = -std::numeric_limits<double>::max();
-    };
-
-    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr wall_pub_;
+    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_, local_grid_sub_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr wall_pub_, safe_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr ditch_pub_;
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr ditch_dist_pub_;
 
     tf2_ros::Buffer tf_buffer_;
     tf2_ros::TransformListener tf_listener_;
 
-    int confirm_count_ = 0;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr last_wall_{new pcl::PointCloud<pcl::PointXYZ>()};
+    pcl::PointCloud<pcl::PointXYZ>::Ptr last_grid_{new pcl::PointCloud<pcl::PointXYZ>()};
 
-    void cloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
+    int confirm_{0}, release_{0};
+    bool latched_{false};
+    int latched_bin_{-1};
+
+    void cloudCb(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
-        std::string target_frame;
-        get_parameter("target_frame", target_frame);
-
-        sensor_msgs::msg::PointCloud2 cloud_tf;
-        try
-        {
+        sensor_msgs::msg::PointCloud2 tf_cloud;
+        try {
             auto tf = tf_buffer_.lookupTransform(
-                target_frame,
+                get_parameter("target_frame").as_string(),
                 msg->header.frame_id,
                 tf2::TimePointZero);
-
-            tf2::doTransform(*msg, cloud_tf, tf);
-        }
-        catch (const tf2::TransformException &)
-        {
-            publishEmpty(msg->header);
+            tf2::doTransform(*msg, tf_cloud, tf);
+        } catch (...) {
             return;
         }
 
         pcl::PointCloud<pcl::PointXYZ> cloud;
-        pcl::fromROSMsg(cloud_tf, cloud);
+        pcl::fromROSMsg(tf_cloud, cloud);
 
-        double xmin, xmax, bin_size, corridor_w;
-        double z_tol, ditch_depth, min_gap_m, wall_h;
-        int confirm_req;
+        double xmin, xmax, bin, width, ditch_depth;
+        int gap_bins;
+        int min_pts_i;
+        size_t min_pts;
 
         get_parameter("xmin", xmin);
         get_parameter("xmax", xmax);
-        get_parameter("bin_size", bin_size);
-        get_parameter("corridor_width", corridor_w);
-        get_parameter("z_flatness_tol", z_tol);
+        get_parameter("bin_size", bin);
+        get_parameter("corridor_width", width);
+        get_parameter("min_points", min_pts_i);
+        get_parameter("gap_bins", gap_bins);
         get_parameter("ditch_depth", ditch_depth);
-        get_parameter("min_gap_length_m", min_gap_m);
-        get_parameter("temporal_confirm_frames", confirm_req);
-        get_parameter("wall_height", wall_h);
 
-        int bins = static_cast<int>((xmax - xmin) / bin_size);
-        if (bins <= 0)
-        {
-            publishEmpty(cloud_tf.header);
-            return;
-        }
+        min_pts = static_cast<size_t>(min_pts_i);
 
-        std::vector<BinStats> stats(bins);
+        const int bins = static_cast<int>((xmax - xmin) / bin);
+        constexpr int lanes = 3;
 
-        for (const auto &p : cloud.points)
-        {
+        std::vector<std::vector<std::vector<float>>> zvals(
+            lanes, std::vector<std::vector<float>>(bins));
+
+        for (const auto &p : cloud.points) {
             if (!std::isfinite(p.x) || !std::isfinite(p.z)) continue;
             if (p.x < xmin || p.x > xmax) continue;
-            if (std::abs(p.y) > corridor_w * 0.5) continue;
 
-            int idx = (p.x - xmin) / bin_size;
-            if (idx < 0 || idx >= bins) continue;
+            const int lane = static_cast<int>((p.y + width / 2.0) / (width / lanes));
+            if (lane < 0 || lane >= lanes) continue;
 
-            auto &b = stats[idx];
-            b.count++;
-            b.min_z = std::min(b.min_z, (double)p.z);
-            b.max_z = std::max(b.max_z, (double)p.z);
+            const int idx = static_cast<int>((p.x - xmin) / bin);
+            if (idx >= 0 && idx < bins)
+                zvals[lane][idx].push_back(p.z);
         }
 
-        bool ditch_raw = false;
-        int gap_start = -1;
-        int gap_len = 0;
-        double ground_z_ref = NAN;
+        auto median = [](std::vector<float> &v) -> float {
+            if (v.empty()) return NAN;
+            const size_t k = v.size() / 2;
+            std::nth_element(v.begin(), v.begin() + k, v.end());
+            return v[k];
+        };
 
-        for (int i = 0; i < bins; i++)
-        {
-            const auto &b = stats[i];
+        int votes = 0;
+        int vote_bin = -1;
 
-            bool ground_like =
-                (b.count >= 4) &&
-                ((b.max_z - b.min_z) < z_tol);
+        for (int l = 0; l < lanes; ++l) {
+            for (int i = 1; i < bins - gap_bins; ++i) {
+                if (zvals[l][i - 1].size() < min_pts ||
+                    zvals[l][i].size() >= min_pts ||
+                    zvals[l][i + gap_bins].size() < min_pts)
+                    continue;
 
-            bool gap_like =
-                (b.count < 3);
+                const float z_before = median(zvals[l][i - 1]);
+                const float z_after  = median(zvals[l][i + gap_bins]);
 
-            if (ground_like && !std::isfinite(ground_z_ref))
-                ground_z_ref = b.min_z;
+                if (!std::isfinite(z_before) || !std::isfinite(z_after)) continue;
 
-            if (gap_like && std::isfinite(ground_z_ref))
-            {
-                if (gap_len == 0) gap_start = i;
-                gap_len++;
-
-                if (gap_len * bin_size >= min_gap_m)
-                {
-                    ditch_raw = true;
-                    break;
-                }
-            }
-
-            if (ground_like && std::isfinite(ground_z_ref))
-            {
-                double drop = ground_z_ref - b.min_z;
-                if (drop >= ditch_depth)
-                {
-                    ditch_raw = true;
+                if ((z_before - z_after) >= ditch_depth) {
+                    ++votes;
+                    vote_bin = i;
                     break;
                 }
             }
         }
 
-        if (ditch_raw)
-            confirm_count_++;
-        else
-            confirm_count_ = 0;
-
-        bool ditch_confirmed = confirm_count_ >= confirm_req;
-
-        publishResults(
-            ditch_confirmed,
-            gap_start,
-            xmin,
-            bin_size,
-            corridor_w,
-            wall_h,
-            cloud_tf.header);
-    }
-
-    void publishResults(bool detected, int gap_bin, double xmin,
-                        double bin_size, double width, double wall_h,
-                        const std_msgs::msg::Header &header)
-    {
-        std_msgs::msg::Bool b;
-        b.data = detected;
-        ditch_pub_->publish(b);
-
-        pcl::PointCloud<pcl::PointXYZ> wall;
-        wall.header.frame_id = header.frame_id;
-
-        if (detected && gap_bin >= 0)
-        {
-            float dist = xmin + gap_bin * bin_size;
-            std_msgs::msg::Float32 d;
-            d.data = dist;
-            ditch_dist_pub_->publish(d);
-
-            for (double y = -width * 0.5; y <= width * 0.5; y += 0.05)
-                for (double z = 0.0; z <= wall_h; z += 0.05)
-                    wall.points.emplace_back(dist, y, z);
+        if (votes >= 2) {
+            ++confirm_;
+            release_ = 0;
+            if (confirm_ >= 3) {
+                latched_ = true;
+                latched_bin_ = vote_bin;
+            }
+        } else if (latched_) {
+            ++release_;
+            confirm_ = 0;
+            if (release_ > 25) latched_ = false;
         }
 
-        sensor_msgs::msg::PointCloud2 out;
-        pcl::toROSMsg(wall, out);
-        out.header = header;
-        wall_pub_->publish(out);
+        buildWall(latched_, latched_bin_, xmin, bin, width, tf_cloud.header);
+        fuse(tf_cloud.header);
     }
 
-    void publishEmpty(const std_msgs::msg::Header &header)
+    void gridCb(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
-        pcl::PointCloud<pcl::PointXYZ> empty;
-        empty.header.frame_id = header.frame_id;
+        pcl::fromROSMsg(*msg, *last_grid_);
+    }
+
+    void buildWall(bool active, int bin, double xmin, double step,
+                   double width, const std_msgs::msg::Header &h)
+    {
+        last_wall_->clear();
+        if (!active || bin < 0) return;
+
+        const double x = xmin + bin * step;
+
+        double ground_z, wall_h;
+        get_parameter("ground_z", ground_z);
+        get_parameter("wall_height", wall_h);
+
+        for (double y = -width / 2.0; y <= width / 2.0; y += 0.05)
+            for (double z = ground_z; z <= ground_z + wall_h; z += 0.05)
+                last_wall_->points.emplace_back(x, y, z);
 
         sensor_msgs::msg::PointCloud2 out;
-        pcl::toROSMsg(empty, out);
-        out.header = header;
+        pcl::toROSMsg(*last_wall_, out);
+        out.header = h;
         wall_pub_->publish(out);
 
         std_msgs::msg::Bool b;
-        b.data = false;
+        b.data = true;
         ditch_pub_->publish(b);
+
+        std_msgs::msg::Float32 d;
+        d.data = static_cast<float>(x);
+        ditch_dist_pub_->publish(d);
+    }
+
+    void fuse(const std_msgs::msg::Header &h)
+    {
+        pcl::PointCloud<pcl::PointXYZ> fused = *last_grid_;
+        fused += *last_wall_;
+
+        sensor_msgs::msg::PointCloud2 out;
+        pcl::toROSMsg(fused, out);
+        out.header = h;
+        safe_pub_->publish(out);
     }
 };
 
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<GapBasedDitchDetector>());
+    rclcpp::spin(std::make_shared<DitchDetectorFinal>());
     rclcpp::shutdown();
     return 0;
 }

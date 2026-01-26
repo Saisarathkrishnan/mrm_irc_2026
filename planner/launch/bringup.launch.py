@@ -1,13 +1,11 @@
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from ament_index_python.packages import get_package_share_directory
 import os
 
-
 def generate_launch_description():
-
     zed_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -15,24 +13,10 @@ def generate_launch_description():
                 'launch',
                 'zed.launch.py'
             )
-        ),
-        launch_arguments={'ros_args': '--log-level warn'}.items()
+        )
     )
 
-    imu_node = ExecuteProcess(
-        cmd=[
-            'ros2', 'run', 'planner', 'imu_conversion_node',
-            '--ros-args', '--log-level', 'warn'
-        ],
-        output='screen'
-    )
-
-    yolo_node = ExecuteProcess(
-        cmd=['ros2', 'run', 'yolo', 'inference_engine'],
-        output='screen'
-    )
-
-    rtabmap_launch = IncludeLaunchDescription(
+    rtab_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
                 get_package_share_directory('planner'),
@@ -42,26 +26,18 @@ def generate_launch_description():
         )
     )
 
-    relay_node = ExecuteProcess(
-        cmd=['ros2', 'run', 'planner', 'relay_node'],
-        output='screen'
-    )
-
-    gps_node = Node(
-        package='gps',
-        executable='gps_rtk',
-        name='gps',
-        output='screen',
-        arguments=['--ros-args', '--log-level', 'warn'],
-        respawn=True,
-        respawn_delay=5.0
-    )
+    relay_node = Node(package='planner',executable='relay_node',output='screen')
+    yolo_node = Node(package='yolo',executable='inference',output='screen')
+    ditch_node = Node(package='ditch_detection',executable='ditch3',output='screen')
+    imu_node = Node(package='planner',executable='imu_conversion_node',output='screen')
+    gps_node = Node(package='gps',executable='gps_rtk',output='screen')
 
     return LaunchDescription([
         zed_launch,
-        imu_node,
-        yolo_node,
-        rtabmap_launch,
+        rtab_launch,
         relay_node,
+        yolo_node,
+        ditch_node,
+        imu_node,
         gps_node
     ])

@@ -13,7 +13,9 @@ setup(
          ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'models'),
-         ['yolo/cone_v1.engine']),
+         ['yolo/cone_v1.engine',
+          'yolo/cone_final.engine',
+          'yolo/cone_final.pt']),
     ],
 
     install_requires=['setuptools'],
@@ -21,14 +23,13 @@ setup(
 
     maintainer='vighneshreddy',
     maintainer_email='example@email.com',
-    description='TensorRT YOLOv8 cone detection nodes (single + tiled) with Flask streaming',
+    description='YOLOv8 cone detection with Flask streaming',
     license='MIT',
 
     entry_points={
         'console_scripts': [
-            'inference = yolo.inference_node:main',
-            'inference_engine = yolo.inference_engine:main',
-            'inference_engine_tiled = yolo.inference_engine_tiled:main',
+            'inference = yolo.inference:main',
+	    'inference_engine = yolo.inference_engine:main',
         ],
     },
 )
