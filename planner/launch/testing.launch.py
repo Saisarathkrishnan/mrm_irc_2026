@@ -28,7 +28,7 @@ def generate_launch_description():
 
     relay_node = Node(package='planner',executable='relay_node',output='screen')
     yolo_node = Node(package='yolo',executable='inference',output='screen')
-    ditch_node = Node(package='ditch_detection',executable='ditch2',output='screen')
+    ditch_node = Node(package='ditch_detection',executable='ditch3',output='screen')
     imu_node = Node(package='planner',executable='imu_conversion_node',output='screen')
     gps_node = Node(package='gps',executable='gps_rtk',output='screen')
 

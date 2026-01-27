@@ -120,6 +120,8 @@ ament_target_dependencies(hill_att
   sensor_msgs
   geometry_msgs
   custom_msgs
+  std_srvs
+  pcl_conversions
 )
 
 install(TARGETS

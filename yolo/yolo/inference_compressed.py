@@ -52,7 +52,8 @@ def video():
             if latest_frame is None:
                 time.sleep(0.01)
                 continue
-            ok,jpg=cv2.imencode(".jpg",latest_frame,[cv2.IMWRITE_JPEG_QUALITY,95])
+            f=cv2.resize(latest_frame,(0,0),fx=0.4,fy=0.4)
+            ok,jpg=cv2.imencode(".jpg",f,[cv2.IMWRITE_JPEG_QUALITY,30])
             if not ok:
                 continue
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"+jpg.tobytes()+b"\r\n"
@@ -116,9 +117,9 @@ class ConeDetector(Node):
             depth=self.get_depth(cx,cy)
             offset=(cx-w/2)/(w/2)
             if color not in best_per_color or conf>best_per_color[color][0]:
-                best_per_color[color]=(conf,x1,y1,x2,y2,cx,cy,depth,offset)
+                best_per_color[color]=(conf,x1,y1,x2,y2,depth,offset)
         for color,data in best_per_color.items():
-            conf,x1,y1,x2,y2,cx,cy,depth,offset=data
+            conf,x1,y1,x2,y2,depth,offset=data
             m=MarkerTag()
             m.is_found=True
             m.id=COLOR_IDS[color]
@@ -126,8 +127,8 @@ class ConeDetector(Node):
             m.y=offset
             self.pub.publish(m)
             cv2.rectangle(frame,(x1,y1),(x2,y2),BOX_COLORS[color],2)
-            cv2.putText(frame,f"{color} {conf:.2f} {depth:.2f}m",(x1,y1-6),
-                        cv2.FONT_HERSHEY_SIMPLEX,0.6,BOX_COLORS[color],2)
+            cv2.putText(frame,f"{color} {conf:.2f}",(x1,y1-6),
+                        cv2.FONT_HERSHEY_SIMPLEX,0.5,BOX_COLORS[color],1)
         if not best_per_color:
             m=MarkerTag()
             m.is_found=False
@@ -140,11 +141,7 @@ class ConeDetector(Node):
 def main():
     rclpy.init()
     node=ConeDetector()
-    def sigint_handler(sig,frame):
-        node.destroy_node()
-        rclpy.shutdown()
-        sys.exit(0)
-    signal.signal(signal.SIGINT,sigint_handler)
+    signal.signal(signal.SIGINT,lambda s,f:(node.destroy_node(),rclpy.shutdown(),sys.exit(0)))
     rclpy.spin(node)
 
 if __name__=="__main__":

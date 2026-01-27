@@ -13,25 +13,24 @@
 
 #include <vector>
 #include <cmath>
-#include <algorithm>
 
-class DitchDetectorFinal : public rclcpp::Node
+class DitchDetectorDZ : public rclcpp::Node
 {
 public:
-    DitchDetectorFinal()
-    : Node("ditch_detector_final"),
+    DitchDetectorDZ()
+    : Node("ditch_detector_dz"),
       tf_buffer_(get_clock()),
       tf_listener_(tf_buffer_)
     {
         cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
             "/zed/zed_node/point_cloud/cloud_registered",
             rclcpp::SensorDataQoS(),
-            std::bind(&DitchDetectorFinal::cloudCb, this, std::placeholders::_1));
+            std::bind(&DitchDetectorDZ::cloudCallback, this, std::placeholders::_1));
 
         local_grid_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
             "/local_grid_obstacle",
             rclcpp::SensorDataQoS(),
-            std::bind(&DitchDetectorFinal::gridCb, this, std::placeholders::_1));
+            std::bind(&DitchDetectorDZ::localGridCallback, this, std::placeholders::_1));
 
         wall_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/fake_wall_cloud", 10);
         safe_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/local_grid_safe", 10);
@@ -42,17 +41,18 @@ public:
         declare_parameter("xmin", 0.6);
         declare_parameter("xmax", 3.0);
         declare_parameter("bin_size", 0.15);
-        declare_parameter("corridor_width", 1.6);
-        declare_parameter("min_points", 8);
-        declare_parameter("gap_bins", 2);
-        declare_parameter("ditch_depth", 0.30);
-        declare_parameter("wall_height", 0.8);
-        declare_parameter("ground_z", -0.4);
+        declare_parameter("corridor_width", 2.0);
+        declare_parameter("min_points_per_bin", 8);
+        declare_parameter("wall_height", 1.0);
+        declare_parameter("ground_z", -0.50);
     }
 
 private:
-    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_, local_grid_sub_;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr wall_pub_, safe_pub_;
+    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;
+    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr local_grid_sub_;
+
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr wall_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr safe_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr ditch_pub_;
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr ditch_dist_pub_;
 
@@ -60,151 +60,134 @@ private:
     tf2_ros::TransformListener tf_listener_;
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr last_wall_{new pcl::PointCloud<pcl::PointXYZ>()};
-    pcl::PointCloud<pcl::PointXYZ>::Ptr last_grid_{new pcl::PointCloud<pcl::PointXYZ>()};
+    pcl::PointCloud<pcl::PointXYZ>::Ptr last_local_grid_{new pcl::PointCloud<pcl::PointXYZ>()};
 
-    int confirm_{0}, release_{0};
-    bool latched_{false};
-    int latched_bin_{-1};
+    bool ditch_latched_ = false;
+    int release_count_ = 0;
+    int latched_bin_ = -1;
 
-    void cloudCb(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
+    void cloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
-        sensor_msgs::msg::PointCloud2 tf_cloud;
-        try {
+        std::string target_frame;
+        get_parameter("target_frame", target_frame);
+
+        sensor_msgs::msg::PointCloud2 cloud_tf;
+        try
+        {
             auto tf = tf_buffer_.lookupTransform(
-                get_parameter("target_frame").as_string(),
-                msg->header.frame_id,
-                tf2::TimePointZero);
-            tf2::doTransform(*msg, tf_cloud, tf);
-        } catch (...) {
+                target_frame, msg->header.frame_id, tf2::TimePointZero);
+            tf2::doTransform(*msg, cloud_tf, tf);
+        }
+        catch (...)
+        {
             return;
         }
 
         pcl::PointCloud<pcl::PointXYZ> cloud;
-        pcl::fromROSMsg(tf_cloud, cloud);
+        pcl::fromROSMsg(cloud_tf, cloud);
 
-        double xmin, xmax, bin, width, ditch_depth;
-        int gap_bins;
-        int min_pts_i;
-        size_t min_pts;
+        double xmin, xmax, bin_size, corridor_w, wall_h, ground_z;
+        int min_pts;
 
         get_parameter("xmin", xmin);
         get_parameter("xmax", xmax);
-        get_parameter("bin_size", bin);
-        get_parameter("corridor_width", width);
-        get_parameter("min_points", min_pts_i);
-        get_parameter("gap_bins", gap_bins);
-        get_parameter("ditch_depth", ditch_depth);
+        get_parameter("bin_size", bin_size);
+        get_parameter("corridor_width", corridor_w);
+        get_parameter("min_points_per_bin", min_pts);
+        get_parameter("wall_height", wall_h);
+        get_parameter("ground_z", ground_z);
 
-        min_pts = static_cast<size_t>(min_pts_i);
+        int bins = static_cast<int>((xmax - xmin) / bin_size);
+        std::vector<int> counts(bins, 0);
 
-        const int bins = static_cast<int>((xmax - xmin) / bin);
-        constexpr int lanes = 3;
-
-        std::vector<std::vector<std::vector<float>>> zvals(
-            lanes, std::vector<std::vector<float>>(bins));
-
-        for (const auto &p : cloud.points) {
-            if (!std::isfinite(p.x) || !std::isfinite(p.z)) continue;
+        for (const auto &p : cloud.points)
+        {
+            if (!std::isfinite(p.x)) continue;
             if (p.x < xmin || p.x > xmax) continue;
+            if (std::abs(p.y) > corridor_w * 0.5) continue;
 
-            const int lane = static_cast<int>((p.y + width / 2.0) / (width / lanes));
-            if (lane < 0 || lane >= lanes) continue;
-
-            const int idx = static_cast<int>((p.x - xmin) / bin);
+            int idx = static_cast<int>((p.x - xmin) / bin_size);
             if (idx >= 0 && idx < bins)
-                zvals[lane][idx].push_back(p.z);
+                counts[idx]++;
         }
 
-        auto median = [](std::vector<float> &v) -> float {
-            if (v.empty()) return NAN;
-            const size_t k = v.size() / 2;
-            std::nth_element(v.begin(), v.begin() + k, v.end());
-            return v[k];
-        };
+        bool raw_detect = false;
+        int raw_bin = -1;
 
-        int votes = 0;
-        int vote_bin = -1;
-
-        for (int l = 0; l < lanes; ++l) {
-            for (int i = 1; i < bins - gap_bins; ++i) {
-                if (zvals[l][i - 1].size() < min_pts ||
-                    zvals[l][i].size() >= min_pts ||
-                    zvals[l][i + gap_bins].size() < min_pts)
-                    continue;
-
-                const float z_before = median(zvals[l][i - 1]);
-                const float z_after  = median(zvals[l][i + gap_bins]);
-
-                if (!std::isfinite(z_before) || !std::isfinite(z_after)) continue;
-
-                if ((z_before - z_after) >= ditch_depth) {
-                    ++votes;
-                    vote_bin = i;
-                    break;
-                }
+        for (int i = 1; i < bins; i++)
+        {
+            if (counts[i - 1] >= min_pts && counts[i] < min_pts)
+            {
+                raw_detect = true;
+                raw_bin = i;
+                break;
             }
         }
 
-        if (votes >= 2) {
-            ++confirm_;
-            release_ = 0;
-            if (confirm_ >= 3) {
-                latched_ = true;
-                latched_bin_ = vote_bin;
+        if (raw_detect)
+        {
+            ditch_latched_ = true;
+            latched_bin_ = raw_bin;
+            release_count_ = 0;
+        }
+        else if (ditch_latched_)
+        {
+            release_count_++;
+            if (release_count_ >= 8)
+            {
+                ditch_latched_ = false;
+                latched_bin_ = -1;
             }
-        } else if (latched_) {
-            ++release_;
-            confirm_ = 0;
-            if (release_ > 25) latched_ = false;
         }
 
-        buildWall(latched_, latched_bin_, xmin, bin, width, tf_cloud.header);
-        fuse(tf_cloud.header);
+        buildWall(ditch_latched_, latched_bin_, xmin, bin_size,
+                  corridor_w, wall_h, ground_z, cloud_tf.header);
+
+        fuseAndPublish(cloud_tf.header);
     }
 
-    void gridCb(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
+    void localGridCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
-        pcl::fromROSMsg(*msg, *last_grid_);
+        pcl::fromROSMsg(*msg, *last_local_grid_);
     }
 
-    void buildWall(bool active, int bin, double xmin, double step,
-                   double width, const std_msgs::msg::Header &h)
+    void buildWall(bool active, int bin, double xmin, double bin_size,
+                   double width, double wall_h, double ground_z,
+                   const std_msgs::msg::Header &header)
     {
         last_wall_->clear();
+        last_wall_->header.frame_id = header.frame_id;
+
+        std_msgs::msg::Bool b;
+        b.data = active;
+        ditch_pub_->publish(b);
+
         if (!active || bin < 0) return;
 
-        const double x = xmin + bin * step;
+        float dist = xmin + (bin - 1.5f) * bin_size;
 
-        double ground_z, wall_h;
-        get_parameter("ground_z", ground_z);
-        get_parameter("wall_height", wall_h);
-
-        for (double y = -width / 2.0; y <= width / 2.0; y += 0.05)
+        for (double y = -width; y <= width; y += 0.05)
             for (double z = ground_z; z <= ground_z + wall_h; z += 0.05)
-                last_wall_->points.emplace_back(x, y, z);
+                last_wall_->points.emplace_back(dist, y, z);
 
         sensor_msgs::msg::PointCloud2 out;
         pcl::toROSMsg(*last_wall_, out);
-        out.header = h;
+        out.header = header;
         wall_pub_->publish(out);
 
-        std_msgs::msg::Bool b;
-        b.data = true;
-        ditch_pub_->publish(b);
-
         std_msgs::msg::Float32 d;
-        d.data = static_cast<float>(x);
+        d.data = dist;
         ditch_dist_pub_->publish(d);
     }
 
-    void fuse(const std_msgs::msg::Header &h)
+    void fuseAndPublish(const std_msgs::msg::Header &header)
     {
-        pcl::PointCloud<pcl::PointXYZ> fused = *last_grid_;
+        pcl::PointCloud<pcl::PointXYZ> fused = *last_local_grid_;
         fused += *last_wall_;
 
         sensor_msgs::msg::PointCloud2 out;
         pcl::toROSMsg(fused, out);
-        out.header = h;
+        out.header = header;
         safe_pub_->publish(out);
     }
 };
@@ -212,7 +195,7 @@ private:
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<DitchDetectorFinal>());
+    rclcpp::spin(std::make_shared<DitchDetectorDZ>());
     rclcpp::shutdown();
     return 0;
 }

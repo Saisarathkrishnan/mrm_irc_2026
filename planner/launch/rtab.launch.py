@@ -26,15 +26,15 @@ def generate_launch_description():
                 'subscribe_imu': False,                      # IMU disabled
 
                 'approx_sync': True,                         # Approximate sync
-                'wait_for_transform': 0.8,                   # TF wait timeout
-                'tf_delay': 0.2,                              # TF delay compensation
+                'wait_for_transform': 1.2,                   # TF wait timeout
+                'tf_delay': 0.5,                              # TF delay compensation
                 'sync_queue_size': 20,                       # Sync buffer size
                 'topic_queue_size': 20,                      # ROS queue size
                 'qos_camera_info': 1,                        # SensorData QoS
 
                 'use_sim_time': False,                       # Use system time
 
-                'Rtabmap/DetectionRate': '3.0',              # SLAM update rate
+                'Rtabmap/DetectionRate': '2.0',              # SLAM update rate
                 'Rtabmap/TimeThr': '0',                      # No time limit
                 'Rtabmap/PublishOccupancyGrid': 'true',      # Publish grid
 
@@ -50,7 +50,7 @@ def generate_launch_description():
                 'Grid/MaxObstacleHeight': '2.0',             # Max obstacle height
 
                 'Grid/RangeMin': '0.0',                      # Min depth range
-                'Grid/RangeMax': '8.0',                      # Max depth range
+                'Grid/RangeMax': '6.0',                      # Max depth range
 
                 'Grid/UnknownSpaceFilled': 'true',           # Unknown = occupied
 
@@ -60,7 +60,7 @@ def generate_launch_description():
                 'Grid/NoiseFilteringMinNeighbors': '5',      # Min neighbors
                 'Grid/MinClusterSize': '8',                  # Min cluster size
 
-                'Grid/CellSize': '0.05',                     # Grid resolution
+                'Grid/CellSize': '0.10',                     # Grid resolution
 
                 'GridGlobal/FloodFillDepth': '12',           # Fill unknown gaps
             }],

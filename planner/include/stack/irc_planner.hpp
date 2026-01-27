@@ -20,7 +20,6 @@
 #include "custom_msgs/msg/imu_data.hpp"
 #include "custom_msgs/msg/planner_status.hpp"
 
-#include <sensor_msgs/msg/point_cloud2.hpp>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -35,11 +34,9 @@ namespace planner
 
 constexpr double kRoverLength  = 1.50;
 constexpr double kRoverBreadth = 1.25;
-
 constexpr double kMaxLinearVel  = 1.0;
 constexpr double kMaxAngularVel = 1.5;
 constexpr double kDistanceThreshold = 2.0;
-
 
 enum State
 {
@@ -67,13 +64,11 @@ enum SearchSkew
     kRightSkew = 1
 };
 
-
 struct Coordinates
 {
     double latitude;
     double longitude;
 };
-
 
 class SensorCallback : public rclcpp::Node
 {
@@ -106,7 +101,6 @@ private:
     bool rover_state;
     bool last_rover_state;
 
-    // GPS Related
     bool gps_goal_set;
     bool gps_goal_reached;
     bool gps_aligned_;
@@ -114,20 +108,17 @@ private:
     Coordinates goal_location;
     rclcpp::Time last_gps_time_;
 
-    // Cone Related
     bool cone_detect;
     bool cone_goal_reached;
     double cone_x;
     double cone_y;
     rclcpp::Time last_cone_time_;
 
-    // Obstacle Related
     bool obstacle_detect;
     double obs_x;
     double obs_y;
     sensor_msgs::msg::PointCloud2::SharedPtr last_obstacle_cloud_;
 
-    // Search Related
     bool search_ref_set_;
     bool spot_turn_back_;
     bool spot_done_;
@@ -139,35 +130,31 @@ private:
     State prev_state_;
     SearchPattern prev_search_pattern_;
 
-
-    // Delivery Related
     bool delivery_requested_;
     bool delivery_done_;
     rclcpp::Time delivery_start_time_;
 
-    // Orientation
     double zed_yaw;
     double bno_yaw;
     double current_orientation;
 
-    // --- Duplicate cone suppression ---
-Coordinates delivered_cone_location_;
-bool delivered_cone_valid_ = false;
-int delivered_cone_id_ = -1;
+    Coordinates delivered_cone_location_;
+    bool delivered_cone_valid_{false};
+    int delivered_cone_id_{-1};
 
+    Coordinates pickup_cone_location_;
+    bool pickup_cone_valid_{false};
+    int pickup_cone_id_{-1};
 
     std::vector<double> obj_follow_linear;
     std::vector<double> obj_follow_angular;
 
     std::mutex state_mutex_;
 
-    //idk bro
     rclcpp::Time last_cloud_time_;
 
-    // Obstacle clearance timing
     bool obstacle_clear_timing_{false};
     rclcpp::Time obstacle_clear_since_;
-
 
     bool bearing_locked_;
     double locked_bearing_deg_;
@@ -176,11 +163,9 @@ int delivered_cone_id_ = -1;
     bool search_timing_;
     double search_offset_deg_;
 
-
     void stackRun();
     void RoverStateClassifier();
 
-    // Callbacks
     void imuCallback(const custom_msgs::msg::ImuData::SharedPtr msg);
     void externalImuCallback(const custom_msgs::msg::ImuData::SharedPtr msg);
     void gpsCallback(const sensor_msgs::msg::NavSatFix::SharedPtr fix);
@@ -189,7 +174,6 @@ int delivered_cone_id_ = -1;
     void stateCallback(const std_msgs::msg::Bool::SharedPtr state);
     void deliveredCallback(const std_msgs::msg::Bool::SharedPtr msg);
 
-    // Core States 
     void coordinateFollowing();
     void obstacleAvoidance();
     void objectFollowing();
@@ -197,7 +181,6 @@ int delivered_cone_id_ = -1;
     void objectDelivery();
     void navigationModeSelect();
 
-    // Helpers
     void publishVel(const geometry_msgs::msg::Twist& msg);
     void hardStop();
     void disableAutonomous();
@@ -215,14 +198,11 @@ int delivered_cone_id_ = -1;
     double headingError(double target, double current);
     double normalize360(double angle);
 
-    //
-      sensor_msgs::msg::PointCloud2::SharedPtr att_latest_pcl;
-      std::vector<std::vector<double>> obstacleDataType1;
-      bool obstacleIs;
-
-
+    sensor_msgs::msg::PointCloud2::SharedPtr att_latest_pcl;
+    std::vector<std::vector<double>> obstacleDataType1;
+    bool obstacleIs;
 };
 
-} // namespace planner
+} 
 
 #endif

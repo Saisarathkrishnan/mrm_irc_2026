@@ -29,7 +29,8 @@ setup(
     entry_points={
         'console_scripts': [
             'inference = yolo.inference:main',
-	    'inference_engine = yolo.inference_engine:main',
+            'inference_engine = yolo.inference_engine:main',
+            'cone_detector = yolo.cone_detector:main',
         ],
     },
 )

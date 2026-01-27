@@ -138,7 +138,7 @@ namespace planner
     s.state = CurrState;
     s.nav_mode = nav_mode;
     s.curr_lat = curr_location.latitude;
-    s.curr_lon =curr_location.longitude;
+    s.curr_lon = curr_location.longitude;
     s.goal_lat = goal_location.latitude;
     s.goal_lon = goal_location.longitude;
     s.current_yaw_deg = current_orientation;
@@ -293,8 +293,7 @@ namespace planner
         curr_location.latitude = fix_->latitude;
         curr_location.longitude = fix_->longitude;
         last_gps_time_ = this->get_clock()->now();
-	std::cout<<curr_location.latitude<<":"<<curr_location.longitude<<std::endl;    
-}
+    }
 
     void SensorCallback::pclCallback(
     const sensor_msgs::msg::PointCloud2::SharedPtr msg)
@@ -587,7 +586,7 @@ namespace planner
         cmd.angular.z = 0;
         double angle_diff = abs(destAngle_local - currangle_coordF);
 
-        if (angle_diff < 50)
+        if (angle_diff < 40)
         {
             angleSetted = true;
         }
@@ -604,20 +603,21 @@ double anglex = 0.0;
 
 if (angleSetted)
 {
-	std::cout<<"angle setted"<<std::endl;
-    speedx = std::clamp(0.4 + 0.2 * dist, 0.4, 1.5);
+
+std::cout<<"anglesetted"<<std::endl;
+    speedx = std::clamp(0.4 + 0.2 * dist, 0.4, 2.0);
 
     if (angle_diff > 0)
     {
         anglex = -abs(pow(dist, 3) / 100);
-        if (abs(anglex) > 1.5) anglex = -1.5;
-        if (abs(anglex) < 0.3) anglex = -0.4;
+        if (abs(anglex) > 2) anglex = -1.5;
+        if (abs(anglex) < 0.25) anglex = -0.4;
     }
     else if (angle_diff < 0)
     {
         anglex = abs(pow(dist, 3) / 100);
-        if (abs(anglex) > 1.5) anglex = 1.5;
-        if (abs(anglex) < 0.3) anglex = 0.4;
+        if (abs(anglex) > 2) anglex = 1.5;
+        if (abs(anglex) < 0.25) anglex = 0.4;
     }
 }
 else

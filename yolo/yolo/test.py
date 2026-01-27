@@ -22,7 +22,9 @@ MODEL_PATH="/home/mrmnavjet/IRC2026/ircWS/mrm_irc_2026/yolo/yolo/cone_final.pt"
 RGB_TOPIC="/zed/zed_node/rgb/color/rect/image"
 DEPTH_TOPIC="/zed/zed_node/depth/depth_registered"
 PUBLISH_TOPIC="/marker_detect"
-CONF_THRES=0.4
+CONF_THRES=0.85
+
+INFER_W,INFER_H=640,384
 
 COLOR_IDS={"orange":1,"red":2,"blue":3,"green":4,"yellow":5}
 BOX_COLORS={
@@ -43,16 +45,17 @@ HSV_RANGES={
 
 app=Flask(__name__)
 latest_frame=None
+last_stream=0.0
 
 @app.route("/video")
 def video():
     def gen():
-        global latest_frame
+        global latest_frame,last_stream
         while True:
-            if latest_frame is None:
+            if latest_frame is None or time.time()-last_stream<0.05:
                 time.sleep(0.01)
                 continue
-            ok,jpg=cv2.imencode(".jpg",latest_frame,[cv2.IMWRITE_JPEG_QUALITY,95])
+            ok,jpg=cv2.imencode(".jpg",latest_frame,[cv2.IMWRITE_JPEG_QUALITY,90])
             if not ok:
                 continue
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"+jpg.tobytes()+b"\r\n"
@@ -67,6 +70,7 @@ class ConeDetector(Node):
         self.bridge=CvBridge()
         self.model=YOLO(MODEL_PATH)
         self.depth_img=None
+        self.prev_found=False
         self.rgb_sub=self.create_subscription(Image,RGB_TOPIC,self.rgb_cb,10)
         self.depth_sub=self.create_subscription(Image,DEPTH_TOPIC,self.depth_cb,10)
         self.pub=self.create_publisher(MarkerTag,PUBLISH_TOPIC,10)
@@ -78,7 +82,15 @@ class ConeDetector(Node):
         except:
             self.depth_img=None
 
+    def preprocess_roi(self,roi):
+        lab=cv2.cvtColor(roi,cv2.COLOR_BGR2LAB)
+        l,a,b=cv2.split(lab)
+        l=cv2.createCLAHE(2.0,(8,8)).apply(l)
+        roi=cv2.merge([l,a,b])
+        return cv2.cvtColor(roi,cv2.COLOR_LAB2BGR)
+
     def classify_color(self,roi):
+        roi=self.preprocess_roi(roi)
         hsv=cv2.cvtColor(roi,cv2.COLOR_BGR2HSV)
         best,count="orange",0
         for c,ranges in HSV_RANGES.items():
@@ -93,58 +105,72 @@ class ConeDetector(Node):
         if self.depth_img is None:
             return -1.0
         h,w=self.depth_img.shape[:2]
-        if 0<=cx<w and 0<=cy<h:
-            d=self.depth_img[int(cy),int(cx)]
-            if np.isfinite(d) and d>0:
-                return float(d)
-        return -1.0
+        if cx<2 or cy<2 or cx>=w-2 or cy>=h-2:
+            return -1.0
+        patch=self.depth_img[cy-2:cy+3,cx-2:cx+3]
+        patch=patch[np.isfinite(patch)]
+        return float(np.median(patch)) if patch.size else -1.0
 
     def rgb_cb(self,msg):
-        global latest_frame
+        global latest_frame,last_stream
         frame=self.bridge.imgmsg_to_cv2(msg,"bgr8")
         h,w=frame.shape[:2]
-        res=self.model(frame,conf=CONF_THRES,verbose=False)[0]
-        best_per_color={}
+
+        small=cv2.resize(frame,(INFER_W,INFER_H))
+        sx,sy=w/INFER_W,h/INFER_H
+
+        res=self.model(small,conf=CONF_THRES,verbose=False)[0]
+
+        best=None
+        best_depth=1e9
+
         for b in res.boxes:
-            conf=float(b.conf[0])
             x1,y1,x2,y2=map(int,b.xyxy[0])
+            x1,y1,x2,y2=int(x1*sx),int(y1*sy),int(x2*sx),int(y2*sy)
             cx,cy=(x1+x2)//2,(y1+y2)//2
             roi=frame[y1:y2,x1:x2]
             if roi.size==0:
                 continue
-            color=self.classify_color(roi)
             depth=self.get_depth(cx,cy)
+            if 0<depth<best_depth:
+                best_depth=depth
+                best=(x1,y1,x2,y2,cx,cy,roi)
+
+        found=False
+        if best:
+            x1,y1,x2,y2,cx,cy,roi=best
+            color=self.classify_color(roi)
             offset=(cx-w/2)/(w/2)
-            if color not in best_per_color or conf>best_per_color[color][0]:
-                best_per_color[color]=(conf,x1,y1,x2,y2,cx,cy,depth,offset)
-        for color,data in best_per_color.items():
-            conf,x1,y1,x2,y2,cx,cy,depth,offset=data
+
             m=MarkerTag()
             m.is_found=True
             m.id=COLOR_IDS[color]
-            m.x=depth
+            m.x=best_depth
             m.y=offset
             self.pub.publish(m)
+            self.prev_found=True
+            found=True
+
             cv2.rectangle(frame,(x1,y1),(x2,y2),BOX_COLORS[color],2)
-            cv2.putText(frame,f"{color} {conf:.2f} {depth:.2f}m",(x1,y1-6),
+            cv2.putText(frame,f"{color} {best_depth:.2f}m",(x1,y1-6),
                         cv2.FONT_HERSHEY_SIMPLEX,0.6,BOX_COLORS[color],2)
-        if not best_per_color:
+
+        if not found and self.prev_found:
             m=MarkerTag()
             m.is_found=False
             m.id=COLOR_IDS["orange"]
             m.x=-1.0
             m.y=0.0
             self.pub.publish(m)
+            self.prev_found=False
+
         latest_frame=frame
+        last_stream=time.time()
 
 def main():
     rclpy.init()
     node=ConeDetector()
-    def sigint_handler(sig,frame):
-        node.destroy_node()
-        rclpy.shutdown()
-        sys.exit(0)
-    signal.signal(signal.SIGINT,sigint_handler)
+    signal.signal(signal.SIGINT,lambda s,f:(node.destroy_node(),rclpy.shutdown(),sys.exit(0)))
     rclpy.spin(node)
 
 if __name__=="__main__":

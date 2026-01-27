@@ -71,7 +71,7 @@ private:
         if (!autonomous_mode_.load()) return;
 
         float linear_vel = msg->linear.x * 1.2f;
-        float angular_vel = -msg->angular.z * 1.2f*2;
+        float angular_vel = -msg->angular.z * 1.2f;
 
         float max_linear_velocity =
             (static_cast<float>(M_PI) * wheel_diameter * max_wheel_RPM) / 60.0f;
