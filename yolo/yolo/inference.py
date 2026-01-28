@@ -22,7 +22,7 @@ MODEL_PATH="/home/mrmnavjet/IRC2026/ircWS/mrm_irc_2026/yolo/yolo/cone_final.pt"
 RGB_TOPIC="/zed/zed_node/rgb/color/rect/image"
 DEPTH_TOPIC="/zed/zed_node/depth/depth_registered"
 PUBLISH_TOPIC="/marker_detect"
-CONF_THRES=0.4
+CONF_THRES=0.63
 
 COLOR_IDS={"orange":1,"red":2,"blue":3,"green":4,"yellow":5}
 BOX_COLORS={

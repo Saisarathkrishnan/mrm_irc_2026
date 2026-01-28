@@ -533,9 +533,11 @@ namespace planner
         if (!gps_goal_set)
         {
 //            std::cout << "lmao" << std::endl;
+
             publishVel(geometry_msgs::msg::Twist()); // Zero vel gng
             return;
         }
+
 /*
         auto now = this->get_clock()->now();
 
@@ -698,7 +700,7 @@ namespace planner
         constexpr double k_ang = 0.7;
         constexpr double y_deadband = 0.06;
         constexpr double max_ang = 0.7;
-        constexpr double constant_lin = 0.7;
+        constexpr double constant_lin = 0.8;
 
         double ang_err = cone_y;
         if (std::abs(ang_err) < y_deadband) ang_err = 0.0;
@@ -706,7 +708,7 @@ namespace planner
         cmd.angular.z = std::clamp(-k_ang * ang_err, -max_ang, max_ang);
 
         if (cone_x == -1.0)
-            cmd.linear.x = 0.6;
+            cmd.linear.x = 0.8;
         else if (cone_x <= kDistanceThreshold)
             cmd.linear.x = 0.0;
         else
@@ -728,7 +730,7 @@ namespace planner
         auto now = clock->now();
 
 
-        const double ang_vel = 0.9;
+        const double ang_vel = 1.0;
         const double lin_vel = 0.65;
 
         if (cone_detect)
@@ -783,7 +785,7 @@ namespace planner
             {
                 FollowPattern = kTurnB;
                 search_end_time_ =
-                    now + rclcpp::Duration::from_seconds(6.0);
+                    now + rclcpp::Duration::from_seconds(7.0);
             }
             return;
         }
@@ -808,7 +810,7 @@ namespace planner
                     extra = search_cycle_;
 
                 search_end_time_ =
-                    now + rclcpp::Duration::from_seconds(3.0 + extra);
+                    now + rclcpp::Duration::from_seconds(3.5 + extra);
             }
             return;
         }
@@ -848,7 +850,7 @@ namespace planner
                 search_cycle_++;
                 FollowPattern = kTurnA;
                 search_end_time_ =
-                    now + rclcpp::Duration::from_seconds(3.0);
+                    now + rclcpp::Duration::from_seconds(3.5);
             }
             return;
         }

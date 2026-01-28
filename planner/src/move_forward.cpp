@@ -12,10 +12,18 @@ public:
 
 private:
     void run() {
+        auto t = (now() - start_).seconds();
         geometry_msgs::msg::Twist cmd;
-        if ((now() - start_).seconds() < 3.0)
-            cmd.linear.x = 1.0;
-        pub_->publish(cmd);
+
+        if (t < 5.0) {
+            cmd.linear.x = 3.0;
+            pub_->publish(cmd);
+            return;
+        }
+
+        pub_->publish(cmd);      // final stop
+        timer_->cancel();        // stop callbacks
+        rclcpp::shutdown();      // node dies
     }
 
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_;
@@ -26,5 +34,5 @@ private:
 int main(int argc, char **argv) {
     rclcpp::init(argc, argv);
     rclcpp::spin(std::make_shared<MoveForward>());
-    rclcpp::shutdown();
+    return 0;
 }
