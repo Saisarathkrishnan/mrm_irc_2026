@@ -529,14 +529,14 @@ namespace planner
 
     void SensorCallback::coordinateFollowing()
     {
-        std::cout << "yes yeyeye" << std::endl;
+        std::cout << "yes coordintate following is going" << std::endl;
         if (!gps_goal_set)
         {
-            std::cout << "lmao" << std::endl;
+//            std::cout << "lmao" << std::endl;
             publishVel(geometry_msgs::msg::Twist()); // Zero vel gng
             return;
         }
-
+/*
         auto now = this->get_clock()->now();
 
         if ((now - last_gps_time_).seconds() > 1.5)
@@ -546,11 +546,11 @@ namespace planner
             publishVel(geometry_msgs::msg::Twist()); // stale gps
             return;
         }
-
+*/
         double dist = haversine(curr_location, goal_location);
         double currangle_coordF = bno_yaw;
 
-        if (dist <= kDistanceThreshold)
+        if (dist <= 4)
         {
             gps_goal_reached = true;
             gps_aligned_ = false;
@@ -587,7 +587,7 @@ namespace planner
         cmd.angular.z = 0;
         double angle_diff = abs(destAngle_local - currangle_coordF);
 
-        if (angle_diff < 50)
+        if (angle_diff < 15)
         {
             angleSetted = true;
         }
@@ -599,44 +599,44 @@ namespace planner
         angle_diff = destAngle_local - currangle_coordF;
         angle_diff = angle_diff - 360.0 * floor((angle_diff + 180.0) / 360.0);
 
-            double speedx = 0.0;
-double anglex = 0.0;
+        double speedx = 0.0;
+        double anglex = 0.0;
 
-if (angleSetted)
-{
-	std::cout<<"angle setted"<<std::endl;
-    speedx = std::clamp(0.4 + 0.2 * dist, 0.4, 1.5);
+        if (angleSetted)
+        {
+            std::cout<<"angle setted"<<std::endl;
+            speedx = std::clamp(0.4 + 0.2 * dist, 0.4, 2.0);
 
-    if (angle_diff > 0)
-    {
-        anglex = -abs(pow(dist, 3) / 100);
-        if (abs(anglex) > 1.5) anglex = -1.5;
-        if (abs(anglex) < 0.3) anglex = -0.4;
-    }
-    else if (angle_diff < 0)
-    {
-        anglex = abs(pow(dist, 3) / 100);
-        if (abs(anglex) > 1.5) anglex = 1.5;
-        if (abs(anglex) < 0.3) anglex = 0.4;
-    }
-}
-else
-{
-    std::cout << "angle not setted" << std::endl;
+            if (angle_diff > 0)
+            {
+                anglex = -abs(pow(dist, 3) / 100);
+                if (abs(anglex) > 1.5) anglex = -1.5;
+                if (abs(anglex) < 0.3) anglex = -0.4;
+            }
+            else if (angle_diff < 0)
+            {
+                anglex = abs(pow(dist, 3) / 100);
+                if (abs(anglex) > 1.5) anglex = 1.5;
+                if (abs(anglex) < 0.3) anglex = 0.4;
+            }
+        }
+        else
+        {
+            std::cout << " not setted" << std::endl;
 
-    if (angle_diff > 0)
-    {
-        anglex = -abs(pow(dist, 3) / 100);
-        if (abs(anglex) > 1.5) anglex = -1.5;
-        if (abs(anglex) < 0.25) anglex = -0.4;
-    }
-    else if (angle_diff < 0)
-    {
-        anglex = abs(pow(dist, 3) / 100);
-        if (abs(anglex) > 1.5) anglex = 1.5;
-        if (abs(anglex) < 0.25) anglex = 0.4;
-    }
-}
+            if (angle_diff > 0)
+            {
+                anglex = -abs(pow(dist, 3) / 100);
+                if (abs(anglex) > 1.5) anglex = -1.5;
+                if (abs(anglex) < 0.25) anglex = -0.4;
+            }
+            else if (angle_diff < 0)
+            {
+                anglex = abs(pow(dist, 3) / 100);
+                if (abs(anglex) > 1.5) anglex = 1.5;
+                if (abs(anglex) < 0.25) anglex = 0.4;
+            }
+        }
 
 
         cmd.linear.x = speedx;
